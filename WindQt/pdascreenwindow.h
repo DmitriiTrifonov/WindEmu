@@ -5,7 +5,11 @@
 #include <QLabel>
 #include <QVector>
 #include <QRect>
+#include <QHash>
 #include "emubase.h"
+
+// a host key press as Psion keys: the key itself plus combination adjustments
+struct KeyMapping { EpocKey key; bool withFn = false; bool dropCtrl = false; };
 
 class PDAScreenWindow : public QWidget
 {
@@ -17,6 +21,8 @@ private:
 	QLabel *lcd;
 	QVector<PanelButton> panelButtons;
 	QLabel *pressedPanelLabel = nullptr;
+	// what each held host key was pressed as, so its release matches
+	QHash<quint32, KeyMapping> heldKeys;
 
 	QLabel *addPanelLabel(const QString &text, int x, int y, int w, int h);
 	void setPanelLabelPressed(QLabel *label, bool pressed);

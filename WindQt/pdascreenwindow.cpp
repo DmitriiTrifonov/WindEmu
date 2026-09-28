@@ -1,6 +1,10 @@
 #include "pdascreenwindow.h"
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QTimer>
+#ifdef Q_OS_LINUX
+#include <linux/input-event-codes.h>
+#endif
 
 static const char *PanelLabelNormalStyle = "border: 1px solid palette(mid); background: palette(button);";
 static const char *PanelLabelPressedStyle = "border: 1px solid palette(mid); background: palette(highlight); color: palette(highlighted-text);";
@@ -81,7 +85,7 @@ void PDAScreenWindow::updateScreen() {
 	lcd->setPixmap(QPixmap::fromImage(std::move(img)));
 }
 
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC)
 static EpocKey resolveKey(int key, int vk) {
 	// Although Cocoa/Carbon's virtual keycodes include
 	// modifiers, Qt doesn't expose them through QKeyEvent...
@@ -150,9 +154,61 @@ static EpocKey resolveKey(int key, int vk) {
 
 	return EStdKeyNull;
 }
+
+static KeyMapping mapKey(const QKeyEvent *event) {
+	return {resolveKey(event->key(), event->nativeVirtualKey()), false};
+}
+#elif defined(Q_OS_LINUX)
+// Map by physical key position, like the real keyboard matrix, so the host
+// layout (e.g. Russian) doesn't matter. Symbols without their own Psion key
+// are typed as on the device, with Shift/Fn combinations.
+static KeyMapping mapKey(const QKeyEvent *event) {
+	static const char row1[] = "1234567890", row2[] = "QWERTYUIOP", row3[] = "ASDFGHJKL", row4[] = "ZXCVBNM";
+	// Qt reports XKB keycodes, which are evdev keycodes + 8
+	int code = (int)event->nativeScanCode() - 8;
+	if (code >= KEY_1 && code <= KEY_0) return {(EpocKey)row1[code - KEY_1], false};
+	if (code >= KEY_Q && code <= KEY_P) return {(EpocKey)row2[code - KEY_Q], false};
+	if (code >= KEY_A && code <= KEY_L) return {(EpocKey)row3[code - KEY_A], false};
+	if (code >= KEY_Z && code <= KEY_M) return {(EpocKey)row4[code - KEY_Z], false};
+
+	switch (code) {
+	// ` is where Esc sits on many compact keyboards; Ctrl+` switches the
+	// Psion off (Fn+Esc) without Ctrl reaching it
+	case KEY_GRAVE:
+		if (event->modifiers() & Qt::ControlModifier)
+			return {EStdKeyEscape, true, true};
+		return {EStdKeyEscape, false};
+	case KEY_ESC:        return {EStdKeyEscape, false};
+	case KEY_BACKSPACE:  return {EStdKeyBackspace, false};
+	case KEY_TAB:        return {EStdKeyTab, false};
+	case KEY_ENTER:
+	case KEY_KPENTER:    return {EStdKeyEnter, false};
+	case KEY_APOSTROPHE: return {EStdKeySingleQuote, false};
+	case KEY_COMMA:      return {EStdKeyComma, false};
+	case KEY_DOT:        return {EStdKeyFullStop, false};
+	case KEY_SPACE:      return {EStdKeySpace, false};
+	case KEY_LEFTSHIFT:  return {EStdKeyLeftShift, false};
+	case KEY_RIGHTSHIFT: return {EStdKeyRightShift, false};
+	case KEY_LEFTCTRL:
+	case KEY_RIGHTCTRL:  return {EStdKeyLeftCtrl, false};
+	case KEY_LEFTALT:    return {EStdKeyLeftFunc, false};
+	case KEY_RIGHTALT:
+	case KEY_COMPOSE:
+	case KEY_F1:         return {EStdKeyMenu, false};
+	case KEY_UP:         return {EStdKeyUpArrow, false};
+	case KEY_DOWN:       return {EStdKeyDownArrow, false};
+	case KEY_LEFT:       return {EStdKeyLeftArrow, false};
+	case KEY_RIGHT:      return {EStdKeyRightArrow, false};
+	// the Psion has no dedicated keys for these; they are Fn + arrows
+	case KEY_HOME:       return {EStdKeyLeftArrow, true};
+	case KEY_END:        return {EStdKeyRightArrow, true};
+	case KEY_PAGEUP:     return {EStdKeyUpArrow, true};
+	case KEY_PAGEDOWN:   return {EStdKeyDownArrow, true};
+	}
+	return {EStdKeyNull, false};
+}
 #else
-static EpocKey resolveKey(int key, int vk) {
-	(void)vk;
+static EpocKey resolveKey(int key) {
 	// Placeholder, doesn't work for all keys
 	switch (key) {
 	case Qt::Key_Apostrophe: return EStdKeySingleQuote;
@@ -186,22 +242,58 @@ static EpocKey resolveKey(int key, int vk) {
 	if (key >= 'A' && key <= 'Z') return (EpocKey)key;
 	return EStdKeyNull;
 }
+
+static KeyMapping mapKey(const QKeyEvent *event) {
+	return {resolveKey(event->key()), false};
+}
 #endif
 
 
+static const int ComboKeyDelayMs = 50;
+
+static quint32 hostKeyId(const QKeyEvent *event) {
+	return event->nativeScanCode() ? event->nativeScanCode() : (quint32)event->key();
+}
+
 void PDAScreenWindow::keyPressEvent(QKeyEvent *event)
 {
-	emu->log("KeyPress: QtKey=%d nativeVirtualKey=%x nativeModifiers=%x", event->key(), event->nativeVirtualKey(), event->nativeModifiers());
-	EpocKey k = resolveKey(event->key(), event->nativeVirtualKey());
-	if (k != EStdKeyNull)
-		emu->setKeyboardKey(k, true);
+	emu->log("KeyPress: QtKey=%d nativeScanCode=%u nativeVirtualKey=%x nativeModifiers=%x", event->key(), event->nativeScanCode(), event->nativeVirtualKey(), event->nativeModifiers());
+	// EPOC does its own key repeat while a key is held in the matrix
+	if (event->isAutoRepeat())
+		return;
+	KeyMapping k = mapKey(event);
+	if (k.key == EStdKeyNull)
+		return;
+	heldKeys.insert(hostKeyId(event), k);
+	if (k.dropCtrl)
+		emu->setKeyboardKey(EStdKeyLeftCtrl, false);
+	if (k.withFn) {
+		// EPOC must see Fn held before the key, as when a person presses them
+		emu->setKeyboardKey(EStdKeyLeftFunc, true);
+		QTimer::singleShot(ComboKeyDelayMs, this, [this, k] { emu->setKeyboardKey(k.key, true); });
+	} else {
+		emu->setKeyboardKey(k.key, true);
+	}
 }
 
 void PDAScreenWindow::keyReleaseEvent(QKeyEvent *event)
 {
-	EpocKey k = resolveKey(event->key(), event->nativeVirtualKey());
-	if (k != EStdKeyNull)
-		emu->setKeyboardKey(k, false);
+	if (event->isAutoRepeat())
+		return;
+	auto it = heldKeys.find(hostKeyId(event));
+	if (it == heldKeys.end())
+		return;
+	KeyMapping k = it.value();
+	heldKeys.erase(it);
+	if (k.withFn) {
+		// released after the delayed press above, even for a quick tap
+		QTimer::singleShot(2 * ComboKeyDelayMs, this, [this, k] {
+			emu->setKeyboardKey(k.key, false);
+			emu->setKeyboardKey(EStdKeyLeftFunc, false);
+		});
+	} else {
+		emu->setKeyboardKey(k.key, false);
+	}
 }
 
 
