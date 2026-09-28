@@ -245,6 +245,9 @@ void Emulator::writeReg32(uint32_t reg, uint32_t value) {
 		interruptMask &= ~value;
 	} else if (reg == HALT) {
 		halted = true;
+	} else if (reg == STBY) {
+		asleep = true;
+		log("Entering standby");
 	// BLEOI = 0x410,
 	// MCEOI = 0x414,
 	} else if (reg == TEOI) {
@@ -461,6 +464,18 @@ void Emulator::loadROM(uint8_t *buffer, size_t size) {
 void Emulator::executeUntil(int64_t cycles) {
 	if (!configured)
 		configure();
+
+	if (asleep) {
+		// clocks are stopped in standby: time passes but timers don't tick
+		if (cycles > passedCycles) {
+			int64_t skipped = cycles - passedCycles;
+			passedCycles = cycles;
+			nextTickAt += skipped;
+			tc1.nextTickAt += skipped;
+			tc2.nextTickAt += skipped;
+		}
+		return;
+	}
 
 	while (!asleep && passedCycles < cycles) {
 		if (passedCycles >= nextTickAt) {
@@ -820,6 +835,12 @@ void Emulator::setKeyboardKey(EpocKey key, bool value) {
 			keyboardColumns[idx >> 8] |= (idx & 0xFF);
 		else
 			keyboardColumns[idx >> 8] &= ~(idx & 0xFF);
+	}
+
+	// Esc doubles as the On key
+	if (asleep && value && key == EStdKeyEscape) {
+		asleep = false;
+		log("Woken from standby");
 	}
 }
 
