@@ -15,8 +15,68 @@ Emulator::Emulator() : EmuBase(true), etna(this) {
 }
 
 
+// EPOC keeps UTC in the RTC and adds the home city's offset when displaying it.
+// State is never persisted, so the home city is always the ROM default: the
+// capital of the locale's country (summer time off).
+static optional<int> defaultHomeOffsetForCountry(uint32_t countryCode) {
+	switch (countryCode) {
+	case 44:  // UK (London); verified with an English 5mx ROM
+	case 351: // Portugal
+	case 353: // Ireland
+		return 0;
+	case 49:  // Germany (Berlin); verified with a German 5mx ROM
+	case 31: case 32: case 33: case 34: case 39: case 41: case 43: case 45: case 46: case 47:
+		return 3600;
+	case 358: // Finland
+		return 7200;
+	default:
+		return nullopt;
+	}
+}
+
+// Reads the country code from the ROM's locale DLL (ELocl.dll), whose locale
+// data begins with the words 0, language, country code.
+void Emulator::detectHomeOffset(size_t romSize) {
+	static const char name[] = "ELocl.dll";
+	const size_t nameLen = sizeof(name) - 1;
+	for (size_t i = 10; i + nameLen <= romSize; i++) {
+		// ROM directory entry: size, linear address, attributes, name length, name
+		if (ROM[i - 1] != nameLen || strncasecmp((const char *)&ROM[i], name, nameLen) != 0)
+			continue;
+		uint32_t size, addr;
+		memcpy(&size, &ROM[i - 10], 4);
+		memcpy(&addr, &ROM[i - 6], 4);
+		uint32_t off = addr - 0x50000000;
+		if (off >= romSize || size > romSize - off)
+			continue;
+		for (uint32_t j = off; j + 12 <= off + size; j += 4) {
+			uint32_t w[3];
+			memcpy(w, &ROM[j], sizeof(w));
+			if (w[0] != 0 || w[1] < 1 || w[1] >= 100)
+				continue;
+			if (auto offset = defaultHomeOffsetForCountry(w[2])) {
+				localeCountryCode = w[2];
+				homeOffset = *offset;
+				return;
+			}
+		}
+	}
+}
+
 uint32_t Emulator::getRTC() {
-    return time(nullptr) - 946684800;
+	// bias the RTC so EPOC's displayed time equals the host's local time
+	time_t now = time(nullptr);
+	struct tm local = *localtime(&now);
+#ifdef _WIN32
+	time_t localAsUtc = _mkgmtime(&local);
+#else
+	time_t localAsUtc = timegm(&local);
+#endif
+	return localAsUtc - homeOffset - 946684800;
+}
+
+uint32_t Emulator::currentRTC() {
+	return (uint32_t)(getRTC() + rtcOffset);
 }
 
 
@@ -96,11 +156,11 @@ uint32_t Emulator::readReg32(uint32_t reg) {
 	} else if (reg == SSSR) {
 		return 0;
     } else if (reg == RTCDRL) {
-        uint16_t v = rtc & 0xFFFF;
+        uint16_t v = currentRTC() & 0xFFFF;
 //		log("RTCDRL: %04x", v);
         return v;
     } else if (reg == RTCDRU) {
-        uint16_t v = rtc >> 16;
+        uint16_t v = currentRTC() >> 16;
 //		log("RTCDRU: %04x", v);
         return v;
     } else if (reg == KSCAN) {
@@ -207,14 +267,24 @@ void Emulator::writeReg32(uint32_t reg, uint32_t value) {
 		tc2.load(value);
 	} else if (reg == TC2EOI) {
 		pendingInterrupts &= ~(1 << TC2OI);
-	} else if (reg == RTCDRL) {
-		rtc &= 0xFFFF0000;
-		rtc |= (value & 0xFFFF);
-		log("RTC write lower: %04x", value);
-	} else if (reg == RTCDRU) {
-		rtc &= 0x0000FFFF;
-		rtc |= (value & 0xFFFF) << 16;
-		log("RTC write upper: %04x", value);
+	} else if (reg == RTCDRL || reg == RTCDRU) {
+		uint32_t rtc = currentRTC();
+		if (reg == RTCDRL) {
+			rtc &= 0xFFFF0000;
+			rtc |= (value & 0xFFFF);
+			log("RTC write lower: %04x", value);
+		} else {
+			rtc &= 0x0000FFFF;
+			rtc |= (value & 0xFFFF) << 16;
+			log("RTC write upper: %04x", value);
+		}
+		rtcOffset = (int64_t)rtc - getRTC();
+		// State is never persisted, so EPOC sees every boot as a cold start and
+		// resets the clock to a fixed default; keep host time through that reset.
+		if (coldBootRtcWrites != 3) {
+			coldBootRtcWrites |= (reg == RTCDRL) ? 1 : 2;
+			rtcOffset = 0;
+		}
 	} else {
 //		printf("RegWrite32 unknown:: pc=%08x reg=%03x value=%08x\n", getGPR(15)-4, reg, value);
 	}
@@ -368,7 +438,11 @@ void Emulator::configure() {
 	nextTickAt = TICK_INTERVAL;
 	tc1.nextTickAt = tc1.tickInterval();
 	tc2.nextTickAt = tc2.tickInterval();
-	rtc = getRTC();
+
+	if (localeCountryCode)
+		log("Locale country code %d, EPOC home offset %+d s", localeCountryCode, homeOffset);
+	else
+		log("Locale country code not found in ROM, assuming EPOC home time is UTC");
 
 	reset();
 }
@@ -381,6 +455,7 @@ size_t Emulator::getROMSize() {
 }
 void Emulator::loadROM(uint8_t *buffer, size_t size) {
 	memcpy(ROM, buffer, min(size, sizeof(ROM)));
+	detectHomeOffset(min(size, sizeof(ROM)));
 }
 
 void Emulator::executeUntil(int64_t cycles) {
@@ -391,7 +466,6 @@ void Emulator::executeUntil(int64_t cycles) {
 		if (passedCycles >= nextTickAt) {
 			// increment RTCDIV
 			if ((pwrsr & 0x3F) == 0x3F) {
-				rtc++;
 				pwrsr &= ~0x3F;
 			} else {
 				pwrsr++;

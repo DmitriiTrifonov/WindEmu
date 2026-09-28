@@ -23,7 +23,11 @@ private:
     uint32_t pwrsr = 0x00002000; // cold start flag
     uint32_t lcdControl = 0;
     uint32_t lcdAddress = 0;
-    uint32_t rtc = 0;
+    int64_t rtcOffset = 0; // RTC value minus host time, so the clock tracks the host even when emulation lags
+	uint8_t coldBootRtcWrites = 0;
+	uint32_t localeCountryCode = 0;
+	int homeOffset = 0;
+	void detectHomeOffset(size_t romSize);
 	uint16_t lastSSIRequest = 0;
 	int ssiReadCounter = 0;
 
@@ -37,6 +41,7 @@ private:
 	bool halted = false, asleep = false;
 
     uint32_t getRTC();
+    uint32_t currentRTC();
 
     uint32_t readReg8(uint32_t reg);
     uint32_t readReg32(uint32_t reg);
