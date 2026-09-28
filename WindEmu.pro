@@ -1,5 +1,7 @@
 TEMPLATE = subdirs
 
 SUBDIRS += \
-    WindQt \
-    WindCore
+    WindCore \
+    WindQt
+
+WindQt.depends = WindCore

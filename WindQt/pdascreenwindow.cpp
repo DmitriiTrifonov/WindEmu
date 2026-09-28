@@ -132,8 +132,8 @@ static EpocKey resolveKey(int key, int vk) {
 	return EStdKeyNull;
 }
 #else
-#error "Unsupported platform (for now! fix me in pdascreenwindow.cpp)"
-static EpocKey resolveKey(int key) {
+static EpocKey resolveKey(int key, int vk) {
+	(void)vk;
 	// Placeholder, doesn't work for all keys
 	switch (key) {
 	case Qt::Key_Apostrophe: return EStdKeySingleQuote;
