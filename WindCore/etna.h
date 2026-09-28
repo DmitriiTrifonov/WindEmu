@@ -16,6 +16,7 @@ class Etna {
 
 public:
 	Etna(ARM710 *owner);
+	void serialize(class StateIO &io);
 
     uint32_t readReg8(uint32_t reg);
     uint32_t readReg32(uint32_t reg);

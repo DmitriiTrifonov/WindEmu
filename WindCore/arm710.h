@@ -120,6 +120,7 @@ public:
 	}
 
 	void setLogger(std::function<void(const char *)> newLogger) { logger = newLogger; }
+	void serializeCpu(class StateIO &io);
 	uint32_t lastPcExecuted() const { return pcHistory[(pcHistoryIndex - 1) % PcHistoryCount].addr; }
 public:
 	void log(const char *format, ...);

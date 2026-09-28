@@ -82,5 +82,15 @@ public:
 	void readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const override;
 	void setKeyboardKey(EpocKey key, bool value) override;
 	void updateTouchInput(int32_t x, int32_t y, bool down) override;
+
+	bool supportsSnapshots() const override { return true; }
+	bool saveState(FILE *file) override;
+	bool loadState(FILE *file) override;
+	bool isAsleep() const override { return asleep; }
+
+private:
+	size_t romSize = 0;
+	uint64_t romHash() const;
+	void serialize(class StateIO &io);
 };
 }

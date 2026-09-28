@@ -1,7 +1,20 @@
 #include "etna.h"
 #include "arm710.h"
+#include "state.h"
 #include <stdio.h>
 #include <string.h>
+
+void Etna::serialize(StateIO &io) {
+	io.pod(prom);
+	io.pod(promReadAddress);
+	io.pod(promReadValue);
+	io.pod(promReadActive);
+	io.pod(promAddressBitsReceived);
+	io.pod(pendingInterrupts);
+	io.pod(interruptMask);
+	io.pod(wake1);
+	io.pod(wake2);
+}
 
 enum EtnaReg {
     regUnk0 = 0,

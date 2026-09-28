@@ -3,6 +3,7 @@
 #include "hardware.h"
 #include <time.h>
 #include "common.h"
+#include "state.h"
 
 
 //#define INCLUDE_D
@@ -457,8 +458,91 @@ size_t Emulator::getROMSize() {
 	return sizeof(ROM);
 }
 void Emulator::loadROM(uint8_t *buffer, size_t size) {
-	memcpy(ROM, buffer, min(size, sizeof(ROM)));
-	detectHomeOffset(min(size, sizeof(ROM)));
+	romSize = min(size, sizeof(ROM));
+	memcpy(ROM, buffer, romSize);
+	detectHomeOffset(romSize);
+}
+
+uint64_t Emulator::romHash() const {
+	uint64_t hash = 0xCBF29CE484222325; // FNV-1a
+	for (size_t i = 0; i < romSize; i++)
+		hash = (hash ^ ROM[i]) * 0x100000001B3;
+	return hash;
+}
+
+void Emulator::serialize(StateIO &io) {
+	static const char Magic[8] = {'W', 'i', 'n', 'd', 'E', 'm', 'u', 'S'};
+	enum { Version = 1 };
+	char magic[8];
+	uint32_t version = Version;
+	uint64_t hash = romHash();
+	memcpy(magic, Magic, sizeof(magic));
+	io.pod(magic);
+	io.pod(version);
+	io.pod(hash);
+	if (io.isLoading() && (memcmp(magic, Magic, sizeof(magic)) != 0 || version != Version || hash != romHash())) {
+		io.fail();
+		return;
+	}
+
+	io.pod(passedCycles);
+	io.pod(nextTickAt);
+	serializeCpu(io);
+
+	io.pod(pendingInterrupts);
+	io.pod(interruptMask);
+	io.pod(portValues);
+	io.pod(portDirections);
+	io.pod(pwrsr);
+	io.pod(lcdControl);
+	io.pod(lcdAddress);
+	io.pod(rtcOffset);
+	io.pod(coldBootRtcWrites);
+	io.pod(lastSSIRequest);
+	io.pod(ssiReadCounter);
+	io.pod(kScan);
+	io.pod(touchX);
+	io.pod(touchY);
+	for (Timer *t : {&tc1, &tc2}) {
+		io.pod(t->nextTickAt);
+		io.pod(t->config);
+		io.pod(t->interval);
+		io.pod(t->value);
+	}
+	for (UART *u : {&uart1, &uart2}) {
+		io.pod(u->portControl);
+		io.pod(u->frameControl);
+		io.pod(u->interrupts);
+		io.pod(u->interruptMask);
+	}
+	etna.serialize(io);
+	io.pod(halted);
+	io.pod(asleep);
+
+	io.memory(MemoryBlockC0, sizeof(MemoryBlockC0));
+#if defined(INCLUDE_BANK1)
+	io.memory(MemoryBlockC1, sizeof(MemoryBlockC1));
+	io.memory(MemoryBlockD0, sizeof(MemoryBlockD0));
+	io.memory(MemoryBlockD1, sizeof(MemoryBlockD1));
+#elif defined(INCLUDE_D)
+	io.memory(MemoryBlockD0, sizeof(MemoryBlockD0));
+#endif
+}
+
+bool Emulator::saveState(FILE *file) {
+	StateIO io(file, false);
+	serialize(io);
+	return io.good();
+}
+
+bool Emulator::loadState(FILE *file) {
+	// wire up the peripherals first; the saved fields then replace their reset state
+	configure();
+	StateIO io(file, true);
+	serialize(io);
+	// no host keys are held down at this point
+	memset(keyboardColumns, 0, sizeof(keyboardColumns));
+	return io.good();
 }
 
 void Emulator::executeUntil(int64_t cycles) {

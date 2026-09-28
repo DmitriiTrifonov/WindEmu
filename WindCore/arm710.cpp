@@ -1,5 +1,37 @@
 #include "arm710.h"
 #include "common.h"
+#include "state.h"
+
+void ARM710::serializeCpu(StateIO &io) {
+	io.pod(bank);
+	io.pod(CPSR);
+	io.pod(GPRs);
+	io.pod(fiqBankedRegisters);
+	io.pod(allModesBankedRegisters);
+	io.pod(SPSRs);
+	io.pod(cp15_id);
+	io.pod(cp15_control);
+	io.pod(cp15_translationTableBase);
+	io.pod(cp15_domainAccessControl);
+	io.pod(cp15_faultStatus);
+	io.pod(cp15_faultAddress);
+	io.pod(pcHistory);
+	io.pod(pcHistoryIndex);
+	io.pod(faultTriggeredThisCycle);
+#ifdef ARM710T_TLB
+	io.pod(tlb);
+	io.pod(nextTlbIndex);
+#else
+	io.pod(singleTlbEntry);
+#endif
+#ifdef ARM710T_CACHE
+	io.pod(cacheBlockTags);
+	io.pod(cacheBlocks);
+#endif
+	io.pod(prefetchCount);
+	io.pod(prefetch);
+	io.pod(prefetchFaults);
+}
 
 // this will need changing if this code ever compiles on big-endian procs
 inline uint32_t read32LE(uint8_t *p) {

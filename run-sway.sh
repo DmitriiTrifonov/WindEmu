@@ -2,7 +2,6 @@
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-ROM="${1:-/home/user/roms/sys_rom.bin}"
 
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 if [ -z "$WAYLAND_DISPLAY" ]; then
@@ -18,4 +17,4 @@ fi
 export WAYLAND_DISPLAY
 export QT_QPA_PLATFORM=wayland
 
-exec "$DIR/run.sh" "$ROM"
+exec "$DIR/run.sh" "$@"

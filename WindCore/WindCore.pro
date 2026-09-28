@@ -49,6 +49,7 @@ HEADERS += \
     decoder.h \
     decoder-inlines.h \
     common.h \
+    state.h \
     windermere.h
 unix {
     target.path = /usr/lib

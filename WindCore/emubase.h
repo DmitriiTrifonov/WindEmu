@@ -1,5 +1,6 @@
 #pragma once
 #include "arm710.h"
+#include <stdio.h>
 #include <unordered_set>
 
 enum EpocKey {
@@ -124,6 +125,12 @@ public:
 
 	EmuBase(bool isTVersion) : ARM710(isTVersion) { }
 	void setCycleScale(uint32_t scale) { cycleScale = scale; }
+
+	// Snapshots and standby; devices that don't support them keep these defaults
+	virtual bool supportsSnapshots() const { return false; }
+	virtual bool saveState(FILE *file) { (void)file; return false; }
+	virtual bool loadState(FILE *file) { (void)file; return false; }
+	virtual bool isAsleep() const { return false; }
 
 	virtual uint8_t *getROMBuffer() = 0;
 	virtual size_t getROMSize() = 0;
