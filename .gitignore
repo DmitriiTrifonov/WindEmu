@@ -5,3 +5,14 @@ WindWasm/WindEmu.js
 WindWasm/WindEmu.wasm
 WindWasm/rom
 WindWasm/obj
+
+# qmake in-source build output
+.qmake.stash
+/Makefile
+/WindCore/Makefile
+/WindQt/Makefile
+*.o
+*.a
+moc_*
+ui_*.h
+/WindQt/WindQt
