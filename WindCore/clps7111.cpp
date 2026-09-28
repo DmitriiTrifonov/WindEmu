@@ -337,8 +337,8 @@ void Emulator::executeUntil(int64_t cycles) {
 #ifdef TRACE_KERNEL
 			if (auto v = virtToPhys(getGPR(15) - 0xC); v.has_value() && instructionReady())
 				debugPC(v.value());
-			passedCycles += tick();
 #endif
+			passedCycles += scaledCycles(tick());
 
 			uint32_t new_pc = getGPR(15) - 0xC;
 			if (_breakpoints.find(new_pc) != _breakpoints.end()) {

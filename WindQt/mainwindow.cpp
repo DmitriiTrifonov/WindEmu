@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QTimer>
+#include <algorithm>
 #include "../WindCore/decoder.h"
 #include "clps7111.h"
 
@@ -124,6 +125,8 @@ void MainWindow::updateScreen()
 
 void MainWindow::on_startButton_clicked()
 {
+	runClock.start();
+	runStartCycles = emu->currentCycles();
     timer->start();
     ui->startButton->setEnabled(false);
     ui->stopButton->setEnabled(true);
@@ -156,9 +159,33 @@ void MainWindow::on_stepInsnButton_clicked()
 void MainWindow::execTimer()
 {
 	if (emu) {
-		emu->executeUntil(emu->currentCycles() + (emu->getClockSpeed() / 64));
+		// pace by real time so EPOC's clock (driven by emulated timer ticks) keeps up
+		const int64_t clock = emu->getClockSpeed();
+		int64_t target = runStartCycles + (int64_t)(runClock.nsecsElapsed() * 1e-9 * clock);
+		int64_t start = emu->currentCycles();
+		int64_t goal = std::min(target, start + clock / 16);
+		if (goal > start) {
+			QElapsedTimer spent;
+			spent.start();
+			emu->executeUntil(goal);
+			adjustCycleScale(spent.nsecsElapsed(), emu->currentCycles() - start);
+		}
 		updateScreen();
 	}
+}
+
+// If the host can't run the CPU at full speed, charge more cycles per instruction
+// (a slower emulated CPU) rather than letting emulated time fall behind real time.
+void MainWindow::adjustCycleScale(qint64 spentNs, int64_t cyclesRun)
+{
+	if (cyclesRun <= 0)
+		return;
+	const double targetLoad = 0.9;
+	double emulatedNs = cyclesRun * 1e9 / emu->getClockSpeed();
+	double load = spentNs / emulatedNs;
+	double wanted = cycleScale * load / targetLoad;
+	cycleScale = std::clamp(cycleScale * 0.8 + wanted * 0.2, 1.0, 8.0);
+	emu->setCycleScale((uint32_t)(cycleScale * EmuBase::CycleScaleOne));
 }
 
 void MainWindow::on_addBreakButton_clicked()

@@ -52,6 +52,10 @@ private:
 	EmuBase *emu;
     QTimer *timer;
 	QStringList pendingLogLines;
+	QElapsedTimer runClock;
+	int64_t runStartCycles = 0;
+	double cycleScale = 1.0;
+	void adjustCycleScale(qint64 spentNs, int64_t cyclesRun);
     void updateScreen();
     void updateBreakpointsList();
     void updateMemory();

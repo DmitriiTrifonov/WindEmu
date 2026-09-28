@@ -110,8 +110,20 @@ protected:
 	int64_t nextTickAt = 0;
 	uint8_t readKeyboard(int kScan);
 
+	// 8.8 fixed point; >1.0 charges each instruction more cycles, emulating a slower CPU
+	uint32_t cycleScale = CycleScaleOne;
+	uint32_t cycleScaleRemainder = 0;
+	int64_t scaledCycles(uint32_t cycles) {
+		uint32_t total = cycles * cycleScale + cycleScaleRemainder;
+		cycleScaleRemainder = total & (CycleScaleOne - 1);
+		return total >> 8;
+	}
+
 public:
+	enum { CycleScaleOne = 256 };
+
 	EmuBase(bool isTVersion) : ARM710(isTVersion) { }
+	void setCycleScale(uint32_t scale) { cycleScale = scale; }
 
 	virtual uint8_t *getROMBuffer() = 0;
 	virtual size_t getROMSize() = 0;
