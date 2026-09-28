@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QElapsedTimer>
+#include <QStringList>
 #include "../WindCore/emubase.h"
 #include "pdascreenwindow.h"
 
@@ -50,6 +51,7 @@ private:
 	PDAScreenWindow pdaScreen;
 	EmuBase *emu;
     QTimer *timer;
+	QStringList pendingLogLines;
     void updateScreen();
     void updateBreakpointsList();
     void updateMemory();

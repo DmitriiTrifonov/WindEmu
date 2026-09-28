@@ -4,6 +4,8 @@
 #include <time.h>
 #include "common.h"
 
+// Per-instruction kernel tracing (debugPC); costs ~30% emulation speed
+//#define TRACE_KERNEL
 
 namespace CLPS7111 {
 Emulator::Emulator() : EmuBase(false), pcCardController(this) {
@@ -332,9 +334,11 @@ void Emulator::executeUntil(int64_t cycles) {
 			// keep the clock moving
 			passedCycles++;
 		} else {
+#ifdef TRACE_KERNEL
 			if (auto v = virtToPhys(getGPR(15) - 0xC); v.has_value() && instructionReady())
 				debugPC(v.value());
 			passedCycles += tick();
+#endif
 
 			uint32_t new_pc = getGPR(15) - 0xC;
 			if (_breakpoints.find(new_pc) != _breakpoints.end()) {

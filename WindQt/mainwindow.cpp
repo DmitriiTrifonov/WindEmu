@@ -15,8 +15,9 @@ MainWindow::MainWindow(EmuBase *emu, QWidget *parent) :
 
 	elapsedTimer.start();
 	emu->setLogger([&](const char *str) {
-		QString fullStr = QStringLiteral("[%1] %2").arg(elapsedTimer.elapsed()).arg(str);
-		ui->logView->appendPlainText(fullStr);
+		fprintf(stderr, "[%lld] %s\n", (long long)elapsedTimer.elapsed(), str);
+		if (isVisible())
+			pendingLogLines.append(QStringLiteral("[%1] %2").arg(elapsedTimer.elapsed()).arg(str));
 	});
 
     timer = new QTimer(this);
@@ -35,6 +36,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::updateScreen()
 {
+	if (!pendingLogLines.isEmpty()) {
+		ui->logView->appendPlainText(pendingLogLines.join('\n'));
+		pendingLogLines.clear();
+	}
+
     ui->cycleCounter->setText(QString("Cycles: %1").arg(emu->currentCycles()));
 
 	updateMemory();

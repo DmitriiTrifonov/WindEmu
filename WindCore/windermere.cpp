@@ -7,6 +7,8 @@
 
 //#define INCLUDE_D
 //#define INCLUDE_BANK1
+// Per-instruction kernel tracing (debugPC); costs ~30% emulation speed
+//#define TRACE_KERNEL
 
 namespace Windermere {
 Emulator::Emulator() : EmuBase(true), etna(this) {
@@ -423,9 +425,11 @@ void Emulator::executeUntil(int64_t cycles) {
 			if (cycles < nextEvent) nextEvent = cycles;
 			passedCycles = nextEvent;
 		} else {
+#ifdef TRACE_KERNEL
 			if (auto v = virtToPhys(getGPR(15) - 0xC); v.has_value() && instructionReady())
 				debugPC(v.value());
 			passedCycles += tick();
+#endif
 
 #ifndef __EMSCRIPTEN__
 			uint32_t new_pc = getGPR(15) - 0xC;
