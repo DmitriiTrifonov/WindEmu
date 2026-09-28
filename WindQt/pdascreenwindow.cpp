@@ -1,5 +1,24 @@
 #include "pdascreenwindow.h"
 #include <QKeyEvent>
+#include <QMouseEvent>
+
+static const char *PanelLabelNormalStyle = "border: 1px solid palette(mid); background: palette(button);";
+static const char *PanelLabelPressedStyle = "border: 1px solid palette(mid); background: palette(highlight); color: palette(highlighted-text);";
+
+QLabel *PDAScreenWindow::addPanelLabel(const QString &text, int x, int y, int w, int h) {
+	const int gap = 2;
+	QLabel *label = new QLabel(text, this);
+	label->setAlignment(Qt::AlignCenter);
+	label->setGeometry(x + gap, y + gap, w - gap * 2, h - gap * 2);
+	label->setStyleSheet(PanelLabelNormalStyle);
+	panelButtons.append({QRect(x, y, w, h), label});
+	return label;
+}
+
+void PDAScreenWindow::setPanelLabelPressed(QLabel *label, bool pressed) {
+	if (label)
+		label->setStyleSheet(pressed ? PanelLabelPressedStyle : PanelLabelNormalStyle);
+}
 
 PDAScreenWindow::PDAScreenWindow(EmuBase *emu, QWidget *parent) :
 	QWidget(parent),
@@ -17,38 +36,38 @@ PDAScreenWindow::PDAScreenWindow(EmuBase *emu, QWidget *parent) :
 		int bitH = emu->getDigitiserHeight() / 5;
 		int leftX = 0;
 		int rightX = bitW + emu->getLCDWidth();
-		(new QLabel("Word",       this))->setGeometry(leftX, bitH * 0, bitW, bitH);
-		(new QLabel("Sheet",      this))->setGeometry(leftX, bitH * 1, bitW, bitH);
-		(new QLabel("Data",       this))->setGeometry(leftX, bitH * 2, bitW, bitH);
-		(new QLabel("Agenda",     this))->setGeometry(leftX, bitH * 3, bitW, bitH);
-		(new QLabel("Extras",     this))->setGeometry(leftX, bitH * 4, bitW, bitH);
-		(new QLabel("EPOC",       this))->setGeometry(rightX, bitH * 0, bitW, bitH);
-		(new QLabel("Menu",       this))->setGeometry(rightX, bitH * 1, bitW, bitH);
-		(new QLabel("Copy/Paste", this))->setGeometry(rightX, bitH * 2, bitW, bitH);
-		(new QLabel("Zoom In",    this))->setGeometry(rightX, bitH * 3, bitW, bitH);
-		(new QLabel("Zoom Out",   this))->setGeometry(rightX, bitH * 4, bitW, bitH);
+		addPanelLabel("Word",       leftX, bitH * 0, bitW, bitH);
+		addPanelLabel("Sheet",      leftX, bitH * 1, bitW, bitH);
+		addPanelLabel("Data",       leftX, bitH * 2, bitW, bitH);
+		addPanelLabel("Agenda",     leftX, bitH * 3, bitW, bitH);
+		addPanelLabel("Extras",     leftX, bitH * 4, bitW, bitH);
+		addPanelLabel("EPOC",       rightX, bitH * 0, bitW, bitH);
+		addPanelLabel("Menu",       rightX, bitH * 1, bitW, bitH);
+		addPanelLabel("Copy/Paste", rightX, bitH * 2, bitW, bitH);
+		addPanelLabel("Zoom In",    rightX, bitH * 3, bitW, bitH);
+		addPanelLabel("Zoom Out",   rightX, bitH * 4, bitW, bitH);
 	} else if (strcmp(who, "Series 5mx") == 0) {
 		int leftW = emu->getLCDOffsetX();
 		int leftH = emu->getLCDHeight() / 5;
-		(new QLabel("➡️",       this))->setGeometry(0, leftH * 0, leftW, leftH);
-		(new QLabel("📄",       this))->setGeometry(0, leftH * 1, leftW, leftH);
-		(new QLabel("📡",       this))->setGeometry(0, leftH * 2, leftW, leftH);
-		(new QLabel("+",       this))->setGeometry(0, leftH * 3, leftW, leftH);
-		(new QLabel("-",       this))->setGeometry(0, leftH * 4, leftW, leftH);
+		addPanelLabel("➡️", 0, leftH * 0, leftW, leftH);
+		addPanelLabel("📄", 0, leftH * 1, leftW, leftH);
+		addPanelLabel("📡", 0, leftH * 2, leftW, leftH);
+		addPanelLabel("+",  0, leftH * 3, leftW, leftH);
+		addPanelLabel("-",  0, leftH * 4, leftW, leftH);
 
 		int barX = 50;
 		int barY = leftH * 5;
 		int barW = (emu->getDigitiserWidth() - barX) / 8;
 		int barH = emu->getDigitiserHeight() - emu->getLCDHeight();
-		(new QLabel("System",   this))->setGeometry(0, barY, barX, barH);
-		(new QLabel("Word",     this))->setGeometry(barX + barW * 0, barY, barW, barH);
-		(new QLabel("Sheet",    this))->setGeometry(barX + barW * 1, barY, barW, barH);
-		(new QLabel("Contacts", this))->setGeometry(barX + barW * 2, barY, barW, barH);
-		(new QLabel("Agenda",   this))->setGeometry(barX + barW * 3, barY, barW, barH);
-		(new QLabel("Email",    this))->setGeometry(barX + barW * 4, barY, barW, barH);
-		(new QLabel("Calc",     this))->setGeometry(barX + barW * 5, barY, barW, barH);
-		(new QLabel("Jotter",   this))->setGeometry(barX + barW * 6, barY, barW, barH);
-		(new QLabel("Extras",   this))->setGeometry(barX + barW * 7, barY, barW, barH);
+		addPanelLabel("System",   0, barY, barX, barH);
+		addPanelLabel("Word",     barX + barW * 0, barY, barW, barH);
+		addPanelLabel("Sheet",    barX + barW * 1, barY, barW, barH);
+		addPanelLabel("Contacts", barX + barW * 2, barY, barW, barH);
+		addPanelLabel("Agenda",   barX + barW * 3, barY, barW, barH);
+		addPanelLabel("Email",    barX + barW * 4, barY, barW, barH);
+		addPanelLabel("Calc",     barX + barW * 5, barY, barW, barH);
+		addPanelLabel("Jotter",   barX + barW * 6, barY, barW, barH);
+		addPanelLabel("Extras",   barX + barW * 7, barY, barW, barH);
 	}
 }
 
@@ -189,15 +208,45 @@ void PDAScreenWindow::keyReleaseEvent(QKeyEvent *event)
 void PDAScreenWindow::mousePressEvent(QMouseEvent *event)
 {
 	emu->updateTouchInput(event->x(), event->y(), true);
+
+	QLabel *hit = nullptr;
+	for (const auto &button : panelButtons) {
+		if (button.cellRect.contains(event->pos())) {
+			hit = button.label;
+			break;
+		}
+	}
+	if (hit != pressedPanelLabel) {
+		setPanelLabelPressed(pressedPanelLabel, false);
+		pressedPanelLabel = hit;
+		setPanelLabelPressed(pressedPanelLabel, true);
+	}
 }
 
 void PDAScreenWindow::mouseReleaseEvent(QMouseEvent *event)
 {
 	emu->updateTouchInput(event->x(), event->y(), false);
+
+	setPanelLabelPressed(pressedPanelLabel, false);
+	pressedPanelLabel = nullptr;
 }
 
 void PDAScreenWindow::mouseMoveEvent(QMouseEvent *event)
 {
-	if (event->buttons() & Qt::LeftButton)
+	if (event->buttons() & Qt::LeftButton) {
 		emu->updateTouchInput(event->x(), event->y(), true);
+
+		QLabel *hit = nullptr;
+		for (const auto &button : panelButtons) {
+			if (button.cellRect.contains(event->pos())) {
+				hit = button.label;
+				break;
+			}
+		}
+		if (hit != pressedPanelLabel) {
+			setPanelLabelPressed(pressedPanelLabel, false);
+			pressedPanelLabel = hit;
+			setPanelLabelPressed(pressedPanelLabel, true);
+		}
+	}
 }

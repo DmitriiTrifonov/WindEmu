@@ -23,6 +23,7 @@ MainWindow::MainWindow(EmuBase *emu, QWidget *parent) :
     timer = new QTimer(this);
     timer->setInterval(1000/64);
     connect(timer, SIGNAL(timeout()), SLOT(execTimer()));
+	on_startButton_clicked();
 
 	pdaScreen.show();
 
@@ -36,6 +37,11 @@ MainWindow::~MainWindow()
 
 void MainWindow::updateScreen()
 {
+	if (!isVisible()) {
+		pdaScreen.updateScreen();
+		return;
+	}
+
 	if (!pendingLogLines.isEmpty()) {
 		ui->logView->appendPlainText(pendingLogLines.join('\n'));
 		pendingLogLines.clear();

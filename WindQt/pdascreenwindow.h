@@ -3,14 +3,23 @@
 
 #include <QWidget>
 #include <QLabel>
+#include <QVector>
+#include <QRect>
 #include "emubase.h"
 
 class PDAScreenWindow : public QWidget
 {
 	Q_OBJECT
 private:
+	struct PanelButton { QRect cellRect; QLabel *label; };
+
 	EmuBase *emu;
 	QLabel *lcd;
+	QVector<PanelButton> panelButtons;
+	QLabel *pressedPanelLabel = nullptr;
+
+	QLabel *addPanelLabel(const QString &text, int x, int y, int w, int h);
+	void setPanelLabelPressed(QLabel *label, bool pressed);
 
 public:
 	explicit PDAScreenWindow(EmuBase *emu, QWidget *parent = nullptr);

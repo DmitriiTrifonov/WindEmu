@@ -53,7 +53,6 @@ int main(int argc, char *argv[])
 
 	emu->loadROM(romData, buffer.size());
 	MainWindow w(emu);
-    w.show();
 
     return a.exec();
 }
