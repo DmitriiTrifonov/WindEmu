@@ -18,6 +18,7 @@ class MainWindow : public QMainWindow
 
 public:
 	explicit MainWindow(EmuBase *emu, bool fullScreen = false, QWidget *parent = nullptr);
+	void setCardPath(const QString &path) { pdaScreen.setCardPath(path); }
     ~MainWindow() override;
 
 private slots:

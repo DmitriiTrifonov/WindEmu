@@ -80,8 +80,9 @@ public:
 	uint8_t *getROMBuffer() override;
 	size_t getROMSize() override;
 	void loadROM(uint8_t *buffer, size_t size) override;
-	bool insertCFCard(const char *imagePath) override { return etna.insertCard(imagePath); }
-	bool ejectCFCard() override { return etna.ejectCard(); }
+	bool insertCFCard(const char *imagePath) override;
+	bool ejectCFCard() override;
+	bool hasCFCard() const override { return etna.hasCard(); }
 	void executeUntil(int64_t cycles) override;
 	int32_t getClockSpeed() const override { return CLOCK_SPEED; }
 	const char *getDeviceName() const override;

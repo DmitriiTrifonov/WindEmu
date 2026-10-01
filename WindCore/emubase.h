@@ -135,6 +135,7 @@ public:
 	virtual bool insertCFCard(const char *imagePath) { (void)imagePath; return false; }
 	// Takes the card out, copying any changes back when it came from a folder
 	virtual bool ejectCFCard() { return true; }
+	virtual bool hasCFCard() const { return false; }
 
 	virtual uint8_t *getROMBuffer() = 0;
 	virtual size_t getROMSize() = 0;

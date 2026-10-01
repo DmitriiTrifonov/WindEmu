@@ -2,6 +2,10 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QTimer>
+#include <QContextMenuEvent>
+#include <QFileDialog>
+#include <QMenu>
+#include <QMessageBox>
 #ifdef Q_OS_LINUX
 #include <linux/input-event-codes.h>
 #endif
@@ -15,7 +19,7 @@ QLabel *PDAScreenWindow::addPanelButton(const QString &text, const QRect &shown,
 	label->setAlignment(Qt::AlignCenter);
 	label->setGeometry(shown.adjusted(gap, gap, -gap, -gap));
 	label->setStyleSheet(PanelLabelNormalStyle);
-	panelButtons.append({shown, label, onDigitiser.center()});
+	panelButtons.append({shown, label, onDigitiser.center(), {}});
 	return label;
 }
 
@@ -90,7 +94,7 @@ PDAScreenWindow::PDAScreenWindow(EmuBase *emu, bool compactLayout, QWidget *pare
 		auto barCell = [&](int i) { return i == 0 ? QRect(0, barY, barX, barH) : QRect(barX + barW * (i - 1), barY, barW, barH); };
 
 		if (compact) {
-			// the column goes above the LCD and the program bar below it
+			// the column goes above the LCD, with the card button, and the program bar below it
 			auto addSymbolButton = [&](const char *symbol, const char *name, const QRect &shown, const QRect &onDigitiser) {
 				QLabel *label = addPanelButton(QString::fromUtf8(symbol), shown, onDigitiser);
 				label->setToolTip(name);
@@ -98,8 +102,13 @@ PDAScreenWindow::PDAScreenWindow(EmuBase *emu, bool compactLayout, QWidget *pare
 				font.setPointSizeF(font.pointSizeF() * 1.6);
 				label->setFont(font);
 			};
+			auto topCell = [&](int i) { return QRect(lcdW * i / 6, 0, lcdW * (i + 1) / 6 - lcdW * i / 6, lcdRect.top()); };
 			for (int i = 0; i < 5; i++)
-				addSymbolButton(leftSymbols[i], leftNames[i], QRect(lcdW * i / 5, 0, lcdW * (i + 1) / 5 - lcdW * i / 5, lcdRect.top()), leftCell(i));
+				addSymbolButton(leftSymbols[i], leftNames[i], topCell(i), leftCell(i));
+			addSymbolButton("", "CF card", topCell(5), QRect());
+			cardButton = panelButtons.last().label;
+			panelButtons.last().action = [this] { toggleCard(); };
+			updateCardButton();
 			int bottomY = lcdRect.bottom() + 1;
 			for (int i = 0; i < 9; i++)
 				addSymbolButton(programSymbols[i], programs[i], QRect(lcdW * i / 9, bottomY, lcdW * (i + 1) / 9 - lcdW * i / 9, height() - bottomY), barCell(i));
@@ -417,6 +426,45 @@ void PDAScreenWindow::setShiftKeys(bool pressed)
 }
 
 
+void PDAScreenWindow::setCardPath(const QString &path)
+{
+	cardPath = path;
+	updateCardButton();
+}
+
+void PDAScreenWindow::updateCardButton()
+{
+	if (!cardButton)
+		return;
+	bool inserted = emu->hasCFCard();
+	cardButton->setText(QString::fromUtf8(inserted ? "⏏️" : "💾"));
+	cardButton->setToolTip(inserted ? "Eject the CF card" : "Insert the CF card");
+}
+
+// Takes the CF card out, copying changes back to its folder, or puts it back in
+void PDAScreenWindow::toggleCard()
+{
+	if (emu->hasCFCard()) {
+		if (!emu->ejectCFCard())
+			QMessageBox::warning(this, "WindEmu", "Not all changes on the CF card could be copied back to " + cardPath);
+	} else {
+		if (cardPath.isEmpty())
+			cardPath = QFileDialog::getExistingDirectory(this, "Choose a folder to use as the CF card");
+		if (!cardPath.isEmpty() && !emu->insertCFCard(QFile::encodeName(cardPath).constData()))
+			QMessageBox::warning(this, "WindEmu", "Could not use " + cardPath + " as a CF card");
+	}
+	updateCardButton();
+}
+
+void PDAScreenWindow::contextMenuEvent(QContextMenuEvent *event)
+{
+	if (strcmp(emu->getDeviceName(), "Series 5mx") != 0)
+		return;
+	QMenu menu(this);
+	menu.addAction(emu->hasCFCard() ? "Eject CF card" : "Insert CF card", this, [this] { toggleCard(); });
+	menu.exec(event->globalPos());
+}
+
 // Where a touch at pos lands on the digitiser, for the area the touch began in
 bool PDAScreenWindow::touchPoint(const QPoint &pos, QPoint &digitiserPos) const
 {
@@ -449,8 +497,12 @@ void PDAScreenWindow::mousePressEvent(QMouseEvent *event)
 		touchArea = TouchNone;
 		for (const auto &button : panelButtons) {
 			if (button.cellRect.contains(event->pos())) {
-				touchArea = TouchButton;
-				touchTarget = button.target;
+				if (button.action) {
+					button.action();
+				} else {
+					touchArea = TouchButton;
+					touchTarget = button.target;
+				}
 				break;
 			}
 		}

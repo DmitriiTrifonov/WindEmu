@@ -158,6 +158,7 @@ int main(int argc, char *argv[])
 	}
 
 	MainWindow w(emu, fullScreen);
+	w.setCardPath(cfImage);
 	int result = a.exec();
 
 	if (emu->supportsSnapshots()) {

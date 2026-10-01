@@ -803,6 +803,26 @@ int Emulator::getLCDHeight()       const { return 240; }
 static bool initRgbValues = false;
 static uint32_t rgbValues[16];
 
+// A card going in or out while EPOC runs comes with the door being opened and closed
+bool Emulator::insertCFCard(const char *imagePath) {
+	bool ok = etna.insertCard(imagePath);
+	if (ok && configured) {
+		mediaChangesDue = 2;
+		mediaChangeAt = passedCycles + CLOCK_SPEED / 4;
+	}
+	return ok;
+}
+
+bool Emulator::ejectCFCard() {
+	bool hadCard = etna.hasCard();
+	bool ok = etna.ejectCard();
+	if (hadCard && configured) {
+		mediaChangesDue = 2;
+		mediaChangeAt = passedCycles + CLOCK_SPEED / 4;
+	}
+	return ok;
+}
+
 // Raises the RTC match interrupt once the clock passes the alarm time; that
 // includes time that went by while the emulator wasn't running
 void Emulator::checkRtcAlarm() {

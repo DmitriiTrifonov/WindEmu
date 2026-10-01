@@ -10,6 +10,7 @@
 #include <QVector>
 #include <QRect>
 #include <QHash>
+#include <functional>
 #include "emubase.h"
 
 // a host key press as Psion keys: the key itself plus combination adjustments
@@ -25,8 +26,9 @@ class PDAScreenWindow : public QWidget
 {
 	Q_OBJECT
 private:
-	// target is where the button lies on the digitiser
-	struct PanelButton { QRect cellRect; QLabel *label; QPoint target; };
+	// target is where the button lies on the digitiser; a button with an
+	// action instead is the emulator's own, rather than the Psion's
+	struct PanelButton { QRect cellRect; QLabel *label; QPoint target; std::function<void()> action; };
 
 	EmuBase *emu;
 	QLabel *lcd;
@@ -37,6 +39,12 @@ private:
 	enum TouchArea { TouchNone, TouchLcd, TouchButton, TouchAnywhere };
 	TouchArea touchArea = TouchNone;
 	QPoint touchTarget;
+
+	// the CF card that the card button or menu puts in
+	QString cardPath;
+	QLabel *cardButton = nullptr;
+	void toggleCard();
+	void updateCardButton();
 	QImage lastFrame;
 	QVector<PanelButton> panelButtons;
 	QLabel *pressedPanelLabel = nullptr;
@@ -51,6 +59,8 @@ private:
 	bool touchPoint(const QPoint &pos, QPoint &digitiserPos) const;
 
 public:
+	void setCardPath(const QString &path);
+
 	// compact puts the Series 5mx's silkscreen buttons above and below its LCD,
 	// for wide screens such as a phone's held sideways
 	explicit PDAScreenWindow(EmuBase *emu, bool compact = false, QWidget *parent = nullptr);
@@ -64,6 +74,7 @@ protected:
 	void mousePressEvent(QMouseEvent *event) override;
 	void mouseReleaseEvent(QMouseEvent *event) override;
 	void mouseMoveEvent(QMouseEvent *event) override;
+	void contextMenuEvent(QContextMenuEvent *event) override;
 };
 
 // Shows the Psion scaled to fill the window, keeping its shape

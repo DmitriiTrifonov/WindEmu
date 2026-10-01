@@ -62,6 +62,8 @@ Files can be copied in and out of it with mtools (the partition starts 16384 byt
 
     mcopy -i card.img@@16384 Program.sis ::
 
+The card can also be taken out and put back while the emulator runs: with the card button at the top right in full screen, or the right-click menu in a window. Taking a folder's card out copies EPOC's changes back to it, as quitting does. While no card is in, EPOC shows drive D: as corrupt rather than empty.
+
 Change an image only while the emulator is closed. When a saved state is resumed, the emulator reports the card door as opened and closed, so EPOC looks at the card again. A state saved by an older WindEmu, before the CF slot existed, needs one `--cold-boot` for EPOC to find the slot.
 
 Russian input

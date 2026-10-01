@@ -26,6 +26,7 @@ public:
 
 	bool insertCard(const char *imagePath) { return card.open(imagePath); }
 	bool ejectCard() { return card.eject(); }
+	bool hasCard() const { return card.isInserted(); }
 	bool irqActive();
 
 	// the PC Card windows, 0x40000000 onwards
