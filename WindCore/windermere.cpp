@@ -122,7 +122,7 @@ uint32_t Emulator::readReg32(uint32_t reg) {
 		return 0xFFFFFFFF;
 	} else if (reg == PWRSR) {
 //		printf("!!! PWRSR read pc=%08x lr=%08x !!!\n", getGPR(15), getGPR(14));
-		return pwrsr;
+		return pwrsr | (externalPower ? PwrsrExternalPower : 0);
 	} else if (reg == INTSR) {
 		return pendingInterrupts & interruptMask;
 	} else if (reg == INTRSR) {
@@ -143,7 +143,7 @@ uint32_t Emulator::readReg32(uint32_t reg) {
 		switch (lastSSIRequest) {
 		case 0xD0D3: ssiValue = (uint16_t)(50 + (touchX * 5.7)); break;
 		case 0x9093: ssiValue = (uint16_t)(3834 - (touchY * 13.225)); break;
-		case 0xA4A4: ssiValue = 3100; break; // MainBattery
+		case 0xA4A4: ssiValue = mainBatteryLevel; break; // MainBattery
 		case 0xE4E4: ssiValue = 3100; break; // BackupBattery
 		}
 
@@ -782,6 +782,15 @@ int Emulator::getLCDHeight()       const { return 240; }
 // TODO move this elsewhere
 static bool initRgbValues = false;
 static uint32_t rgbValues[16];
+
+void Emulator::setPowerSupply(int batteryPercent, bool external) {
+	// EPOC reads the main batteries' level as about 1000 per volt, offset by
+	// 100: 1.8V (1700) shows as empty and 3.0V (2900) as full
+	if (batteryPercent < 0) batteryPercent = 0;
+	if (batteryPercent > 100) batteryPercent = 100;
+	mainBatteryLevel = 1700 + batteryPercent * 12;
+	externalPower = external;
+}
 
 void Emulator::readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const {
 	if (!initRgbValues) {

@@ -39,6 +39,10 @@ private:
     UART uart1, uart2;
 	Etna etna;
 	bool halted = false, asleep = false;
+	// the host's power, not part of the saved state
+	uint16_t mainBatteryLevel = 2900;
+	bool externalPower = false;
+	enum { PwrsrExternalPower = 0x80 };
 	// after resuming a saved state: when to report the CF door as opened and closed
 	int mediaChangesDue = 0;
 	int64_t mediaChangeAt = 0;
@@ -86,6 +90,7 @@ public:
 	int getLCDHeight() const override;
 	void readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const override;
 	bool isBacklightOn() const override { return portValues & 0x1000; }
+	void setPowerSupply(int batteryPercent, bool externalPower) override;
 	void setKeyboardKey(EpocKey key, bool value) override;
 	void updateTouchInput(int32_t x, int32_t y, bool down) override;
 

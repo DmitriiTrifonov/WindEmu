@@ -1,9 +1,49 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QTimer>
+#include <QDir>
+#include <QFile>
 #include <algorithm>
 #include "../WindCore/decoder.h"
 #include "clps7111.h"
+
+static QString readSysFile(const QString &path) {
+	QFile file(path);
+	if (!file.open(QFile::ReadOnly))
+		return QString();
+	return QString::fromLatin1(file.readAll()).trimmed();
+}
+
+// Passes the host's battery charge and charger state on to the Psion
+static void updatePowerSupply(EmuBase *emu) {
+	int percent = -1;
+	bool external = false;
+	QDir dir(QStringLiteral("/sys/class/power_supply"));
+	for (const QString &name : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot)) {
+		QString base = dir.filePath(name) + '/';
+		QString type = readSysFile(base + "type");
+		if (type == QLatin1String("Battery")) {
+			// skip the batteries of keyboards, mice and the like
+			if (readSysFile(base + "scope") == QLatin1String("Device"))
+				continue;
+			bool ok;
+			int capacity = readSysFile(base + "capacity").toInt(&ok);
+			if (ok && percent < 0)
+				percent = capacity;
+			QString status = readSysFile(base + "status");
+			if (status == QLatin1String("Charging") || status == QLatin1String("Full"))
+				external = true;
+		} else if (readSysFile(base + "online") == QLatin1String("1")) {
+			external = true;
+		}
+	}
+	// without a battery, the host runs off the mains
+	if (percent < 0) {
+		percent = 100;
+		external = true;
+	}
+	emu->setPowerSupply(percent, external);
+}
 
 MainWindow::MainWindow(EmuBase *emu, bool fullScreen, QWidget *parent) :
     QMainWindow(parent),
@@ -25,6 +65,11 @@ MainWindow::MainWindow(EmuBase *emu, bool fullScreen, QWidget *parent) :
     timer->setInterval(1000/64);
     connect(timer, SIGNAL(timeout()), SLOT(execTimer()));
 	on_startButton_clicked();
+
+	updatePowerSupply(emu);
+	QTimer *powerTimer = new QTimer(this);
+	connect(powerTimer, &QTimer::timeout, this, [emu] { updatePowerSupply(emu); });
+	powerTimer->start(30 * 1000);
 
 	if (fullScreen) {
 		fullScreenView.reset(new ScaledScreenView(&pdaScreen));

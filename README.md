@@ -13,6 +13,7 @@ Psion 5mx (EPOC R5) features:
 - ❌ Audio: not implemented
 - ❌ Serial/UART support: stubbed out
 - ✅ ETNA (PCMCIA/CompactFlash): CF card backed by a disk image (see below); ETNA's UART is not emulated
+- ✅ Batteries: the main batteries follow the host's battery charge, and a charger shows as external power
 - ✅ RTC: implemented
 - ❌ RTC alarm: not implemented
 - ✅ Standby mode: implemented; Esc wakes the Psion
