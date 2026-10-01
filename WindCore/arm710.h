@@ -27,7 +27,7 @@ typedef optional<uint32_t> MaybeU32;
 class ARM710
 {
 public:
-	enum ValueSize { V8 = 0, V32 = 1 };
+	enum ValueSize { V8 = 0, V32 = 1, V16 = 2 };
 
 	enum MMUFault : uint64_t {
 		// ref: datasheet 9-13 (p111)
@@ -300,6 +300,7 @@ private:
 	uint32_t execMultiplyLong(uint32_t UAS, uint32_t RdHi, uint32_t RdLo, uint32_t Rs, uint32_t Rm);
 	uint32_t execSingleDataSwap(bool B, uint32_t Rn, uint32_t Rd, uint32_t Rm);
 	uint32_t execSingleDataTransfer(uint32_t IPUBWL, uint32_t Rn, uint32_t Rd, uint32_t offset);
+	uint32_t execHalfwordDataTransfer(uint32_t PUIWL, uint32_t Rn, uint32_t Rd, uint32_t SH, uint32_t offset);
 	uint32_t execBlockDataTransfer(uint32_t PUSWL, uint32_t Rn, uint32_t registerList);
 	uint32_t execBranch(bool L, uint32_t offset);
 	uint32_t execCP15RegisterTransfer(uint32_t CPOpc, bool L, uint32_t CRn, uint32_t Rd, uint32_t CP, uint32_t CRm);

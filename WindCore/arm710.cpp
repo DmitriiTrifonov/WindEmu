@@ -189,6 +189,8 @@ uint32_t ARM710::executeInstruction(uint32_t i) {
 		cycles += execBlockDataTransfer(extract(i,24,20), extract(i,19,16), extract(i,15,0));
 	else if ((i & 0x0C000000) == 0x04000000)
 		cycles += execSingleDataTransfer(extract(i,25,20), extract(i,19,16), extract(i,15,12), extract(i,11,0));
+	else if ((i & 0x0E000090) == 0x00000090 && (i & 0x60) && isTVersion)
+		cycles += execHalfwordDataTransfer(extract(i,24,20), extract(i,19,16), extract(i,15,12), extract(i,6,5), (extract(i,11,8) << 4) | extract(i,3,0));
 	else if ((i & 0x0FB00FF0) == 0x01000090)
 		cycles += execSingleDataSwap(extract1(i,22), extract(i,19,16), extract(i,15,12), extract(i,3,0));
 	else if ((i & 0x0F8000F0) == 0x00000090)
@@ -558,6 +560,51 @@ uint32_t ARM710::execSingleDataTransfer(uint32_t IPUBWL, uint32_t Rn, uint32_t R
 
 	if ((preIndex && writeback) || !preIndex)
 		GPRs[Rn] = modifiedBase;
+
+	if (fault != NoFault)
+		reportFault(fault);
+
+	return 2;
+}
+
+// ARMv4 LDRH/STRH/LDRSB/LDRSH
+uint32_t ARM710::execHalfwordDataTransfer(uint32_t PUIWL, uint32_t Rn, uint32_t Rd, uint32_t SH, uint32_t offset)
+{
+	bool load = extract1(PUIWL, 0);
+	bool writeback = extract1(PUIWL, 1);
+	bool immediate = extract1(PUIWL, 2);
+	bool up = extract1(PUIWL, 3);
+	bool preIndex = extract1(PUIWL, 4);
+
+	// for a register offset, the low nybble holds Rm
+	uint32_t calcOffset = immediate ? offset : GPRs[offset & 0xF];
+
+	uint32_t base = GPRs[Rn];
+	if (Rn == 15) base -= 4; // prefetch adjustment
+	uint32_t modifiedBase = up ? (base + calcOffset) : (base - calcOffset);
+	uint32_t transferAddr = preIndex ? modifiedBase : base;
+
+	MMUFault fault;
+	if (load) {
+		auto readResult = readVirtual(transferAddr, (SH == 2) ? V8 : V16);
+		if (readResult.first.has_value()) {
+			uint32_t value = readResult.first.value();
+			if (SH == 2) // signed byte
+				value = (uint32_t)(int32_t)(int8_t)value;
+			else if (SH == 3) // signed halfword
+				value = (uint32_t)(int32_t)(int16_t)value;
+			GPRs[Rd] = value;
+			if (Rd == 15) prefetchCount = 0;
+		}
+		fault = readResult.second;
+	} else {
+		// only SH == 1 (STRH) is a store
+		fault = writeVirtual(GPRs[Rd] & 0xFFFF, transferAddr, V16);
+	}
+
+	if ((preIndex && writeback) || !preIndex)
+		if (!(load && Rn == Rd))
+			GPRs[Rn] = modifiedBase;
 
 	if (fault != NoFault)
 		reportFault(fault);

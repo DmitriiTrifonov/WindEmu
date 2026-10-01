@@ -97,7 +97,8 @@ uint32_t Emulator::readReg8(uint32_t reg) {
 	} else if (reg == PCDR) {
 		return (portValues >> 8) & 0xFF;
 	} else if (reg == PDDR) {
-		return portValues & 0xFF;
+		// bit 7 is ETNA's active-low error line; it must read high for the CF socket to power up
+		return (portValues & 0xFF) | 0x80;
 	} else if (reg == PADDR) {
 		return (portDirections >> 24) & 0xFF;
 	} else if (reg == PBDDR) {
@@ -250,7 +251,8 @@ void Emulator::writeReg32(uint32_t reg, uint32_t value) {
 		asleep = true;
 		log("Entering standby");
 	// BLEOI = 0x410,
-	// MCEOI = 0x414,
+	} else if (reg == MCEOI) {
+		pendingInterrupts &= ~(1 << MCINT);
 	} else if (reg == TEOI) {
 		pendingInterrupts &= ~(1 << TINT);
 	// TEOI = 0x418,
@@ -295,6 +297,16 @@ void Emulator::writeReg32(uint32_t reg, uint32_t value) {
 }
 
 MaybeU32 Emulator::readPhysical(uint32_t physAddr, ValueSize valueSize) {
+	if (valueSize == V16) {
+		if ((physAddr >> 28) == 4)
+			return etna.readCardSpace(physAddr & 0xFFFFFFF, 16);
+		// everything else is fine with two byte accesses
+		auto lo = readPhysical(physAddr, V8), hi = readPhysical(physAddr + 1, V8);
+		if (!lo.has_value() || !hi.has_value())
+			return {};
+		return lo.value() | (hi.value() << 8);
+	}
+
 	uint8_t region = (physAddr >> 24) & 0xF1;
 	if (valueSize == V8) {
 		if (region == 0)
@@ -303,6 +315,8 @@ MaybeU32 Emulator::readPhysical(uint32_t physAddr, ValueSize valueSize) {
 			return ROM2[physAddr & 0x3FFFF];
 		else if (region == 0x20 && physAddr <= 0x20000FFF)
 			return etna.readReg8(physAddr & 0xFFF);
+		else if ((physAddr >> 28) == 4)
+			return etna.readCardSpace(physAddr & 0xFFFFFFF, 8);
 		else if (region == 0x80 && physAddr <= 0x80000FFF)
 			return readReg8(physAddr & 0xFFF);
 #if defined(INCLUDE_BANK1)
@@ -333,6 +347,8 @@ MaybeU32 Emulator::readPhysical(uint32_t physAddr, ValueSize valueSize) {
 			LOAD_32LE(result, physAddr & 0x3FFFF, ROM2);
 		else if (region == 0x20 && physAddr <= 0x20000FFF)
 			result = etna.readReg32(physAddr & 0xFFF);
+		else if ((physAddr >> 28) == 4)
+			result = etna.readCardSpace(physAddr & 0xFFFFFFF, 32);
 		else if (region == 0x80 && physAddr <= 0x80000FFF)
 			result = readReg32(physAddr & 0xFFF);
 #if defined(INCLUDE_BANK1)
@@ -364,6 +380,14 @@ MaybeU32 Emulator::readPhysical(uint32_t physAddr, ValueSize valueSize) {
 }
 
 bool Emulator::writePhysical(uint32_t value, uint32_t physAddr, ValueSize valueSize) {
+	if (valueSize == V16) {
+		if ((physAddr >> 28) == 4) {
+			etna.writeCardSpace(physAddr & 0xFFFFFFF, value, 16);
+			return true;
+		}
+		return writePhysical(value & 0xFF, physAddr, V8) && writePhysical((value >> 8) & 0xFF, physAddr + 1, V8);
+	}
+
 	uint8_t region = (physAddr >> 24) & 0xF1;
 	if (valueSize == V8) {
 #if defined(INCLUDE_BANK1)
@@ -388,6 +412,8 @@ bool Emulator::writePhysical(uint32_t value, uint32_t physAddr, ValueSize valueS
 			return true; // just throw accesses to unmapped RAM away
 		else if (region == 0x20 && physAddr <= 0x20000FFF)
 			etna.writeReg8(physAddr & 0xFFF, value);
+		else if ((physAddr >> 28) == 4)
+			etna.writeCardSpace(physAddr & 0xFFFFFFF, value, 8);
 		else if (region == 0x80 && physAddr <= 0x80000FFF)
 			writeReg8(physAddr & 0xFFF, value);
 		else
@@ -416,6 +442,8 @@ bool Emulator::writePhysical(uint32_t value, uint32_t physAddr, ValueSize valueS
 			return true; // just throw accesses to unmapped RAM away
 		else if (region == 0x20 && physAddr <= 0x20000FFF)
 			etna.writeReg32(physAddr & 0xFFF, value);
+		else if ((physAddr >> 28) == 4)
+			etna.writeCardSpace(physAddr & 0xFFFFFFF, value, 32);
 		else if (region == 0x80 && physAddr <= 0x80000FFF)
 			writeReg32(physAddr & 0xFFF, value);
 		else
@@ -472,7 +500,8 @@ uint64_t Emulator::romHash() const {
 
 void Emulator::serialize(StateIO &io) {
 	static const char Magic[8] = {'W', 'i', 'n', 'd', 'E', 'm', 'u', 'S'};
-	enum { Version = 1 };
+	// version 2 added the CF socket and card
+	enum { Version = 2 };
 	char magic[8];
 	uint32_t version = Version;
 	uint64_t hash = romHash();
@@ -480,7 +509,7 @@ void Emulator::serialize(StateIO &io) {
 	io.pod(magic);
 	io.pod(version);
 	io.pod(hash);
-	if (io.isLoading() && (memcmp(magic, Magic, sizeof(magic)) != 0 || version != Version || hash != romHash())) {
+	if (io.isLoading() && (memcmp(magic, Magic, sizeof(magic)) != 0 || version < 1 || version > Version || hash != romHash())) {
 		io.fail();
 		return;
 	}
@@ -515,7 +544,7 @@ void Emulator::serialize(StateIO &io) {
 		io.pod(u->interrupts);
 		io.pod(u->interruptMask);
 	}
-	etna.serialize(io);
+	etna.serialize(io, version);
 	io.pod(halted);
 	io.pod(asleep);
 
@@ -535,6 +564,9 @@ bool Emulator::saveState(FILE *file) {
 	return io.good();
 }
 
+// EPOC misses a media change while it is still waking up
+static const int64_t MediaChangeDelay = 2 * CLOCK_SPEED;
+
 bool Emulator::loadState(FILE *file) {
 	// wire up the peripherals first; the saved fields then replace their reset state
 	configure();
@@ -542,6 +574,11 @@ bool Emulator::loadState(FILE *file) {
 	serialize(io);
 	// no host keys are held down at this point
 	memset(keyboardColumns, 0, sizeof(keyboardColumns));
+	// The CF card may have been swapped or changed on the host since the state was
+	// saved, so once EPOC is up and running, report the door as opened and closed
+	// to make it look at the card afresh.
+	mediaChangesDue = 2; // opened, then closed
+	mediaChangeAt = passedCycles + MediaChangeDelay;
 	return io.good();
 }
 
@@ -577,6 +614,17 @@ void Emulator::executeUntil(int64_t cycles) {
 			pendingInterrupts |= (1<<TC1OI);
 		if (tc2.tick(passedCycles))
 			pendingInterrupts |= (1<<TC2OI);
+
+		if (mediaChangesDue && !asleep && passedCycles >= mediaChangeAt) {
+			mediaChangesDue--;
+			mediaChangeAt = passedCycles + CLOCK_SPEED;
+			pendingInterrupts |= (1 << MCINT);
+		}
+
+		// ETNA's interrupt line is level-triggered
+		pendingInterrupts &= ~(1 << EINT1);
+		if (etna.irqActive())
+			pendingInterrupts |= (1 << EINT1);
 
 		if ((pendingInterrupts & interruptMask & FIQ_INTERRUPTS) != 0 && canAcceptFIQ()) {
 			requestFIQ();
@@ -924,6 +972,7 @@ void Emulator::setKeyboardKey(EpocKey key, bool value) {
 	// Esc doubles as the On key
 	if (asleep && value && key == EStdKeyEscape) {
 		asleep = false;
+		mediaChangeAt = passedCycles + MediaChangeDelay;
 		log("Woken from standby");
 	}
 }

@@ -12,7 +12,7 @@ Psion 5mx (EPOC R5) features:
 - ✅ Touch panel: implemented
 - ❌ Audio: not implemented
 - ❌ Serial/UART support: stubbed out
-- ❌ ETNA (PCMCIA/CompactFlash): mostly stubbed out
+- ✅ ETNA (PCMCIA/CompactFlash): CF card backed by a disk image (see below); ETNA's UART is not emulated
 - ✅ RTC: implemented
 - ❌ RTC alarm: not implemented
 - ❌ Standby mode: not implemented
@@ -33,6 +33,28 @@ Known issues:
 
 - State is not saved (just like a real Psion :p)
 - EPOC misbehaves massively with memory banks larger than 0x800000 (may be an OS design flaw? need to confirm)
+
+CompactFlash card (Series 5mx)
+------------------------------
+
+Pass a folder or a raw disk image with `--cf` to put a card in the CF slot, where EPOC sees it as drive D:
+
+    ./run.sh /path/to/5mx.bin --cf ~/psion-card
+    ./run.sh /path/to/5mx.bin --cf card.img
+
+A folder is turned into a FAT16 volume when the emulator starts, with 64MB of free space for EPOC to use. When the emulator quits, whatever EPOC created, changed or deleted on the card is copied back into the folder. Files that were changed in the folder while the emulator was running are kept rather than deleted, but EPOC's version wins if both sides changed the same file, so it's best to leave the folder alone until the emulator has quit. If the volume can't be read back (say, EPOC reformatted it as something other than FAT16), the emulator says so and keeps the volume's image in the temporary folder.
+
+An image needs a partition table with a FAT16 partition, like a card formatted on a PC. To make an empty 32MB one:
+
+    truncate -s 32M card.img
+    echo 'start=32, type=6' | sfdisk card.img
+    mkfs.vfat -F 16 -n PSION --offset 32 card.img 32752
+
+Files can be copied in and out of it with mtools (the partition starts 16384 bytes in), for example to install software from a `.sis` file on the Psion:
+
+    mcopy -i card.img@@16384 Program.sis ::
+
+Change an image only while the emulator is closed. When a saved state is resumed, the emulator reports the card door as opened and closed, so EPOC looks at the card again. A state saved by an older WindEmu, before the CF slot existed, needs one `--cold-boot` for EPOC to find the slot.
 
 Copyright
 ---------

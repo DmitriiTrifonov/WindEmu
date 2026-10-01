@@ -99,6 +99,13 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
 	auto args = a.arguments();
 	bool coldBoot = args.removeAll(QStringLiteral("--cold-boot")) > 0;
+	QString cfImage;
+	int cfIndex = args.indexOf(QStringLiteral("--cf"));
+	if (cfIndex > 0 && cfIndex + 1 < args.length()) {
+		cfImage = args.at(cfIndex + 1);
+		args.removeAt(cfIndex + 1);
+		args.removeAt(cfIndex);
+	}
 
 	QString romFile;
 	if (args.length() > 1)
@@ -124,6 +131,13 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 
+	// the card goes in before any saved state is loaded, as that holds the card's own state
+	auto insertCard = [&cfImage](EmuBase *emu) {
+		if (!cfImage.isEmpty() && !emu->insertCFCard(QFile::encodeName(cfImage).constData()))
+			fprintf(stderr, "Could not use %s as a CF card\n", qPrintable(cfImage));
+	};
+	insertCard(emu);
+
 	QString statePath = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation)
 		+ "/WindEmu/" + QFileInfo(romFile).fileName() + ".state";
 	if (emu->supportsSnapshots() && !coldBoot && QFile::exists(statePath)) {
@@ -138,6 +152,7 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "Could not load %s; cold booting\n", qPrintable(statePath));
 			delete emu;
 			emu = createEmulator(buffer);
+			insertCard(emu);
 		}
 	}
 
@@ -148,5 +163,8 @@ int main(int argc, char *argv[])
 		powerOff(emu);
 		saveState(emu, statePath);
 	}
+	// after switching off, so EPOC has finished writing to the card
+	if (!emu->ejectCFCard())
+		fprintf(stderr, "Not all changes on the CF card could be copied back to %s\n", qPrintable(cfImage));
 	return result;
 }

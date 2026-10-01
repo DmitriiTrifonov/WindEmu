@@ -131,6 +131,10 @@ public:
 	virtual bool saveState(FILE *file) { (void)file; return false; }
 	virtual bool loadState(FILE *file) { (void)file; return false; }
 	virtual bool isAsleep() const { return false; }
+	// Puts a CompactFlash card, backed by a raw disk image or a folder, into the slot
+	virtual bool insertCFCard(const char *imagePath) { (void)imagePath; return false; }
+	// Takes the card out, copying any changes back when it came from a folder
+	virtual bool ejectCFCard() { return true; }
 
 	virtual uint8_t *getROMBuffer() = 0;
 	virtual size_t getROMSize() = 0;

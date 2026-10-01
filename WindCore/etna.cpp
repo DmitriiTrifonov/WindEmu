@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 
-void Etna::serialize(StateIO &io) {
+void Etna::serialize(StateIO &io, uint32_t version) {
 	io.pod(prom);
 	io.pod(promReadAddress);
 	io.pod(promReadValue);
@@ -14,7 +14,17 @@ void Etna::serialize(StateIO &io) {
 	io.pod(interruptMask);
 	io.pod(wake1);
 	io.pod(wake2);
+	if (version >= 2) {
+		io.pod(socketControl);
+		io.pod(uartInterruptMask);
+		io.pod(sktB0);
+		io.pod(sktB1);
+		io.pod(cardIrqLine);
+		card.serialize(io);
+	}
 }
+
+enum { IntCard = 1 };
 
 enum EtnaReg {
     regUnk0 = 0,
@@ -102,10 +112,21 @@ uint32_t Etna::readReg8(uint32_t reg)
 //		owner->log("ETNA readReg8: reg=%s @ pc=%08x,lr=%08x", nameReg(reg), owner->getGPR(15) - 4, owner->getGPR(14));
     switch (reg) {
     case regIntClear: return 0;
-    case regSktVarA0: return 1; // will store some status flags
+    // ETNA's UART isn't emulated, so it never interrupts
+    case regUartIntStatus: return 0;
+    case regUartIntMask: return uartInterruptMask;
+    case regPcCdIntStatus: return pendingInterrupts;
+    case regPcCdIntMask: return interruptMask;
+    case regSktVarA0:
+        // bit 2: no card; bit 7: card ready; bits 4-5: battery voltage detect (both fine)
+        return card.isInserted() ? 0xB0 : 0x04;
     case regSktVarA1: return 0; // will store some more status flags
     case regWake1: return wake1;
     case regWake2: return wake2;
+    case regSktCtrl: return socketControl;
+    // EPOC writes 0x0F to SktVarB0 and reads it back to detect the socket
+    case regSktVarB0: return sktB0;
+    case regSktVarB1: return sktB1;
     }
     return 0xFF;
 }
@@ -123,8 +144,18 @@ void Etna::writeReg8(uint32_t reg, uint8_t value)
 		owner->log("ETNA writeReg8: reg=%s value=%02x @ pc=%08x,lr=%08x", nameReg(reg), value, owner->getGPR(15) - 4, owner->getGPR(14));
     switch (reg) {
     case regIntClear: pendingInterrupts &= ~value; break;
+    case regUartIntMask: uartInterruptMask = value; break;
+    case regPcCdIntMask: interruptMask = value; break;
+    case regSktCtrl:
+        // bit 1 powers socket 0; a card starts afresh when powered up
+        if ((value & 2) && !(socketControl & 2))
+            card.reset();
+        socketControl = value;
+        break;
     case regWake1: wake1 = value; break;
     case regWake2: wake2 = value; break;
+    case regSktVarB0: sktB0 = value; break;
+    case regSktVarB1: sktB1 = value; break;
     }
 }
 
@@ -132,6 +163,42 @@ void Etna::writeReg32(uint32_t reg, uint32_t value)
 {
     // may be able to remove this, p. sure Etna is byte addressing only
 	owner->log("ETNA writeReg32: reg=%x value=%08x", reg, value);
+}
+
+bool Etna::irqActive()
+{
+    // ETNA latches the card's interrupt request until EPOC clears it
+    bool line = card.interruptRequested();
+    if (line && !cardIrqLine)
+        pendingInterrupts |= IntCard;
+    cardIrqLine = line;
+    return (pendingInterrupts & interruptMask) != 0;
+}
+
+uint32_t Etna::readCardSpace(uint32_t offset, int bits)
+{
+    // 64MB each of attribute memory, common memory, 8-bit I/O and 16-bit I/O
+    int space = (offset >> 26) & 3;
+    uint32_t addr = offset & 0x3FFFFFF;
+    if (bits == 8)
+        return card.read8(space, addr);
+    if (bits == 16)
+        return card.read16(space, addr);
+    return card.read16(space, addr) | (card.read16(space, addr + 2) << 16);
+}
+
+void Etna::writeCardSpace(uint32_t offset, uint32_t value, int bits)
+{
+    int space = (offset >> 26) & 3;
+    uint32_t addr = offset & 0x3FFFFFF;
+    if (bits == 8) {
+        card.write8(space, addr, value);
+    } else if (bits == 16) {
+        card.write16(space, addr, value);
+    } else {
+        card.write16(space, addr, value & 0xFFFF);
+        card.write16(space, addr + 2, value >> 16);
+    }
 }
 
 void Etna::setPromBit0High()

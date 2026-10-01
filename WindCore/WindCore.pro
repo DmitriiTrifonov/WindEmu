@@ -24,9 +24,11 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 SOURCES += \
     arm710.cpp \
+    cfcard.cpp \
     clps7111.cpp \
     clps7600.cpp \
     emubase.cpp \
+    fatfolder.cpp \
     etna.cpp \
     decoder.c \
     decoder-arm.c \
@@ -34,10 +36,12 @@ SOURCES += \
 
 HEADERS += \
     arm710.h \
+    cfcard.h \
     clps7111.h \
     clps7111_defs.h \
     clps7600.h \
     emubase.h \
+    fatfolder.h \
     etna.h \
     hardware.h \
     wind_defs.h \

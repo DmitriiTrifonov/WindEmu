@@ -39,6 +39,9 @@ private:
     UART uart1, uart2;
 	Etna etna;
 	bool halted = false, asleep = false;
+	// after resuming a saved state: when to report the CF door as opened and closed
+	int mediaChangesDue = 0;
+	int64_t mediaChangeAt = 0;
 
     uint32_t getRTC();
     uint32_t currentRTC();
@@ -70,6 +73,8 @@ public:
 	uint8_t *getROMBuffer() override;
 	size_t getROMSize() override;
 	void loadROM(uint8_t *buffer, size_t size) override;
+	bool insertCFCard(const char *imagePath) override { return etna.insertCard(imagePath); }
+	bool ejectCFCard() override { return etna.ejectCard(); }
 	void executeUntil(int64_t cycles) override;
 	int32_t getClockSpeed() const override { return CLOCK_SPEED; }
 	const char *getDeviceName() const override;

@@ -2,7 +2,7 @@
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-# usage: run.sh [ROM] [--cold-boot]
+# usage: run.sh [ROM] [--cold-boot] [--cf CF_IMAGE]
 ROM="${1:-/home/user/roms/sys_rom.bin}"
 [ $# -gt 0 ] && shift
 
