@@ -34,6 +34,11 @@ Known issues:
 - State is not saved (just like a real Psion :p)
 - EPOC misbehaves massively with memory banks larger than 0x800000 (may be an OS design flaw? need to confirm)
 
+Full screen
+-----------
+
+`--fullscreen` scales the Psion to fill the screen, keeping its shape; `run-sway.sh` uses it. For a Series 5mx the silkscreen buttons then move above and below the LCD (shown as symbols), which suits wide screens such as a phone held sideways.
+
 CompactFlash card (Series 5mx)
 ------------------------------
 
@@ -57,6 +62,11 @@ Files can be copied in and out of it with mtools (the partition starts 16384 byt
     mcopy -i card.img@@16384 Program.sis ::
 
 Change an image only while the emulator is closed. When a saved state is resumed, the emulator reports the card door as opened and closed, so EPOC looks at the card again. A state saved by an older WindEmu, before the CF slot existed, needs one `--cold-boot` for EPOC to find the slot.
+
+Russian input
+-------------
+
+Keys map by position, so the host layout doesn't matter, and the punctuation keys type what they do on a PC with a US layout (using the Psion's Fn and Shift combinations for the symbols it lacks keys for). With the CyrLat keyboard driver installed on the Psion, `extras/cyrlat-pc-russian.kbt` makes the Cyrillic layout match a PC's ЙЦУКЕН: copy it to the CF card, then in Control panel > CyrLat > Keyboard layouts, Edit the Cyr layout, open its Map table and hold Fn (Alt on the host) while tapping Load. Ctrl+Menu (Ctrl with Right Shift, Right Alt or F1 on the host) switches between the layouts. Documents need a font with Cyrillic in its CP-1251 positions to show the letters.
 
 Copyright
 ---------

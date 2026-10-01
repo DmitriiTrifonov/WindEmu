@@ -5,10 +5,10 @@
 #include "../WindCore/decoder.h"
 #include "clps7111.h"
 
-MainWindow::MainWindow(EmuBase *emu, QWidget *parent) :
+MainWindow::MainWindow(EmuBase *emu, bool fullScreen, QWidget *parent) :
     QMainWindow(parent),
 	ui(new Ui::MainWindow),
-	pdaScreen(emu),
+	pdaScreen(emu, fullScreen),
 	emu(emu)
 {
     ui->setupUi(this);
@@ -26,7 +26,13 @@ MainWindow::MainWindow(EmuBase *emu, QWidget *parent) :
     connect(timer, SIGNAL(timeout()), SLOT(execTimer()));
 	on_startButton_clicked();
 
-	pdaScreen.show();
+	if (fullScreen) {
+		fullScreenView.reset(new ScaledScreenView(&pdaScreen));
+		fullScreenView->showFullScreen();
+		pdaScreen.setFocus();
+	} else {
+		pdaScreen.show();
+	}
 
 	updateScreen();
 }

@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QElapsedTimer>
 #include <QStringList>
+#include <memory>
 #include "../WindCore/emubase.h"
 #include "pdascreenwindow.h"
 
@@ -16,7 +17,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-	explicit MainWindow(EmuBase *emu, QWidget *parent = nullptr);
+	explicit MainWindow(EmuBase *emu, bool fullScreen = false, QWidget *parent = nullptr);
     ~MainWindow() override;
 
 private slots:
@@ -49,6 +50,7 @@ private:
 	QElapsedTimer elapsedTimer;
     Ui::MainWindow *ui;
 	PDAScreenWindow pdaScreen;
+	std::unique_ptr<ScaledScreenView> fullScreenView;
 	EmuBase *emu;
     QTimer *timer;
 	QStringList pendingLogLines;

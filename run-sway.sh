@@ -17,4 +17,6 @@ fi
 export WAYLAND_DISPLAY
 export QT_QPA_PLATFORM=wayland
 
-exec "$DIR/run.sh" "$@"
+# on the phone, fill the screen with the Psion; an empty ROM argument keeps run.sh's default
+[ $# -gt 0 ] || set -- ""
+exec "$DIR/run.sh" "$@" --fullscreen

@@ -99,6 +99,7 @@ int main(int argc, char *argv[])
     QApplication a(argc, argv);
 	auto args = a.arguments();
 	bool coldBoot = args.removeAll(QStringLiteral("--cold-boot")) > 0;
+	bool fullScreen = args.removeAll(QStringLiteral("--fullscreen")) > 0;
 	QString cfImage;
 	int cfIndex = args.indexOf(QStringLiteral("--cf"));
 	if (cfIndex > 0 && cfIndex + 1 < args.length()) {
@@ -156,7 +157,7 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	MainWindow w(emu);
+	MainWindow w(emu, fullScreen);
 	int result = a.exec();
 
 	if (emu->supportsSnapshots()) {

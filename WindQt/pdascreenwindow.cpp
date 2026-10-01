@@ -9,14 +9,19 @@
 static const char *PanelLabelNormalStyle = "border: 1px solid palette(mid); background: palette(button);";
 static const char *PanelLabelPressedStyle = "border: 1px solid palette(mid); background: palette(highlight); color: palette(highlighted-text);";
 
-QLabel *PDAScreenWindow::addPanelLabel(const QString &text, int x, int y, int w, int h) {
+QLabel *PDAScreenWindow::addPanelButton(const QString &text, const QRect &shown, const QRect &onDigitiser) {
 	const int gap = 2;
 	QLabel *label = new QLabel(text, this);
 	label->setAlignment(Qt::AlignCenter);
-	label->setGeometry(x + gap, y + gap, w - gap * 2, h - gap * 2);
+	label->setGeometry(shown.adjusted(gap, gap, -gap, -gap));
 	label->setStyleSheet(PanelLabelNormalStyle);
-	panelButtons.append({QRect(x, y, w, h), label});
+	panelButtons.append({shown, label, onDigitiser.center()});
 	return label;
+}
+
+QLabel *PDAScreenWindow::addPanelLabel(const QString &text, int x, int y, int w, int h) {
+	QRect rect(x, y, w, h);
+	return addPanelButton(text, rect, rect);
 }
 
 void PDAScreenWindow::setPanelLabelPressed(QLabel *label, bool pressed) {
@@ -24,16 +29,33 @@ void PDAScreenWindow::setPanelLabelPressed(QLabel *label, bool pressed) {
 		label->setStyleSheet(pressed ? PanelLabelPressedStyle : PanelLabelNormalStyle);
 }
 
-PDAScreenWindow::PDAScreenWindow(EmuBase *emu, QWidget *parent) :
+QLabel *PDAScreenWindow::panelLabelAt(const QPoint &pos) const {
+	for (const auto &button : panelButtons)
+		if (button.cellRect.contains(pos))
+			return button.label;
+	return nullptr;
+}
+
+PDAScreenWindow::PDAScreenWindow(EmuBase *emu, bool compactLayout, QWidget *parent) :
 	QWidget(parent),
 	emu(emu),
 	lcd(new QLabel(this))
 {
 	setWindowTitle("WindEmu");
-	setFixedSize(emu->getDigitiserWidth(), emu->getDigitiserHeight());
-	lcd->setGeometry(emu->getLCDOffsetX(), emu->getLCDOffsetY(), emu->getLCDWidth(), emu->getLCDHeight());
-
 	const char *who = emu->getDeviceName();
+	compact = compactLayout && strcmp(who, "Series 5mx") == 0;
+
+	int lcdW = emu->getLCDWidth(), lcdH = emu->getLCDHeight();
+	if (compact) {
+		const int barH = 40;
+		setFixedSize(lcdW, barH + lcdH + barH);
+		lcdRect = QRect(0, barH, lcdW, lcdH);
+	} else {
+		setFixedSize(emu->getDigitiserWidth(), emu->getDigitiserHeight());
+		lcdRect = QRect(emu->getLCDOffsetX(), emu->getLCDOffsetY(), lcdW, lcdH);
+	}
+	lcd->setGeometry(lcdRect);
+
 	if (strcmp(who, "Osaris") == 0) {
 		// some cheap and cheerful placeholders
 		int bitW = (emu->getDigitiserWidth() - emu->getLCDWidth()) / 2;
@@ -51,27 +73,42 @@ PDAScreenWindow::PDAScreenWindow(EmuBase *emu, QWidget *parent) :
 		addPanelLabel("Zoom In",    rightX, bitH * 3, bitW, bitH);
 		addPanelLabel("Zoom Out",   rightX, bitH * 4, bitW, bitH);
 	} else if (strcmp(who, "Series 5mx") == 0) {
+		// the silkscreen: a column of five left of the LCD, and the program bar below it
 		int leftW = emu->getLCDOffsetX();
 		int leftH = emu->getLCDHeight() / 5;
-		addPanelLabel("➡️", 0, leftH * 0, leftW, leftH);
-		addPanelLabel("📄", 0, leftH * 1, leftW, leftH);
-		addPanelLabel("📡", 0, leftH * 2, leftW, leftH);
-		addPanelLabel("+",  0, leftH * 3, leftW, leftH);
-		addPanelLabel("-",  0, leftH * 4, leftW, leftH);
-
 		int barX = 50;
 		int barY = leftH * 5;
 		int barW = (emu->getDigitiserWidth() - barX) / 8;
 		int barH = emu->getDigitiserHeight() - emu->getLCDHeight();
-		addPanelLabel("System",   0, barY, barX, barH);
-		addPanelLabel("Word",     barX + barW * 0, barY, barW, barH);
-		addPanelLabel("Sheet",    barX + barW * 1, barY, barW, barH);
-		addPanelLabel("Contacts", barX + barW * 2, barY, barW, barH);
-		addPanelLabel("Agenda",   barX + barW * 3, barY, barW, barH);
-		addPanelLabel("Email",    barX + barW * 4, barY, barW, barH);
-		addPanelLabel("Calc",     barX + barW * 5, barY, barW, barH);
-		addPanelLabel("Jotter",   barX + barW * 6, barY, barW, barH);
-		addPanelLabel("Extras",   barX + barW * 7, barY, barW, barH);
+		static const char *const leftIcons[] = {"➡️", "📄", "📡", "+", "-"};
+		static const char *const leftNames[] = {"Menu", "Clipboard", "Infrared", "Zoom in", "Zoom out"};
+		static const char *const programs[] = {"System", "Word", "Sheet", "Contacts", "Agenda", "Email", "Calc", "Jotter", "Extras"};
+		// the compact layout has room for just a symbol per button
+		static const char *const leftSymbols[] = {"☰", "📋", "📡", "🔍➕", "🔍➖"};
+		static const char *const programSymbols[] = {"🏠", "📝", "📊", "📇", "📅", "📧", "🧮", "🗒️", "🧩"};
+		auto leftCell = [&](int i) { return QRect(0, leftH * i, leftW, leftH); };
+		auto barCell = [&](int i) { return i == 0 ? QRect(0, barY, barX, barH) : QRect(barX + barW * (i - 1), barY, barW, barH); };
+
+		if (compact) {
+			// the column goes above the LCD and the program bar below it
+			auto addSymbolButton = [&](const char *symbol, const char *name, const QRect &shown, const QRect &onDigitiser) {
+				QLabel *label = addPanelButton(QString::fromUtf8(symbol), shown, onDigitiser);
+				label->setToolTip(name);
+				QFont font = label->font();
+				font.setPointSizeF(font.pointSizeF() * 1.6);
+				label->setFont(font);
+			};
+			for (int i = 0; i < 5; i++)
+				addSymbolButton(leftSymbols[i], leftNames[i], QRect(lcdW * i / 5, 0, lcdW * (i + 1) / 5 - lcdW * i / 5, lcdRect.top()), leftCell(i));
+			int bottomY = lcdRect.bottom() + 1;
+			for (int i = 0; i < 9; i++)
+				addSymbolButton(programSymbols[i], programs[i], QRect(lcdW * i / 9, bottomY, lcdW * (i + 1) / 9 - lcdW * i / 9, height() - bottomY), barCell(i));
+		} else {
+			for (int i = 0; i < 5; i++)
+				addPanelButton(leftIcons[i], leftCell(i), leftCell(i));
+			for (int i = 0; i < 9; i++)
+				addPanelButton(programs[i], barCell(i), barCell(i));
+		}
 	}
 }
 
@@ -82,7 +119,37 @@ void PDAScreenWindow::updateScreen() {
 		lines[y] = img.scanLine(y);
 	emu->readLCDIntoBuffer(lines, false);
 
+	// skip unchanged frames, which are costly to redraw when scaled
+	if (img == lastFrame)
+		return;
+	lastFrame = img;
 	lcd->setPixmap(QPixmap::fromImage(std::move(img)));
+}
+
+ScaledScreenView::ScaledScreenView(QWidget *screen)
+{
+	setWindowTitle(screen->windowTitle());
+	setScene(&scene);
+	proxy = scene.addWidget(screen);
+	screen->setFocusPolicy(Qt::StrongFocus);
+	scene.setFocusItem(proxy);
+	setBackgroundBrush(Qt::black);
+	setFrameShape(QFrame::NoFrame);
+	setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+	setRenderHint(QPainter::SmoothPixmapTransform);
+}
+
+ScaledScreenView::~ScaledScreenView()
+{
+	// the screen widget belongs to its owner, not to the scene
+	proxy->setWidget(nullptr);
+}
+
+void ScaledScreenView::resizeEvent(QResizeEvent *event)
+{
+	QGraphicsView::resizeEvent(event);
+	fitInView(proxy, Qt::KeepAspectRatio);
 }
 
 #if defined(Q_OS_MAC)
@@ -160,10 +227,18 @@ static KeyMapping mapKey(const QKeyEvent *event) {
 }
 #elif defined(Q_OS_LINUX)
 // Map by physical key position, like the real keyboard matrix, so the host
-// layout (e.g. Russian) doesn't matter. Symbols without their own Psion key
-// are typed as on the device, with Shift/Fn combinations.
+// layout (e.g. Russian) doesn't matter. Punctuation keys type what they do on
+// a PC with a US layout, using the Psion's Fn and Shift combinations for the
+// symbols it has no key for; that also lets CyrLat-style Cyrillic layouts,
+// which re-map symbol codes, follow the PC's ЙЦУКЕН.
 static KeyMapping mapKey(const QKeyEvent *event) {
 	static const char row1[] = "1234567890", row2[] = "QWERTYUIOP", row3[] = "ASDFGHJKL", row4[] = "ZXCVBNM";
+	bool shift = event->modifiers() & Qt::ShiftModifier;
+	auto fnSymbol = [](char key, bool dropShift = false) {
+		KeyMapping k{(EpocKey)key, true};
+		k.dropShift = dropShift;
+		return k;
+	};
 	// Qt reports XKB keycodes, which are evdev keycodes + 8
 	int code = (int)event->nativeScanCode() - 8;
 	if (code >= KEY_1 && code <= KEY_0) return {(EpocKey)row1[code - KEY_1], false};
@@ -183,15 +258,31 @@ static KeyMapping mapKey(const QKeyEvent *event) {
 	case KEY_TAB:        return {EStdKeyTab, false};
 	case KEY_ENTER:
 	case KEY_KPENTER:    return {EStdKeyEnter, false};
-	case KEY_APOSTROPHE: return {EStdKeySingleQuote, false};
-	case KEY_COMMA:      return {EStdKeyComma, false};
-	case KEY_DOT:        return {EStdKeyFullStop, false};
+	// Shift+2 is " on the Psion
+	case KEY_APOSTROPHE: return shift ? KeyMapping{(EpocKey)'2'} : KeyMapping{EStdKeySingleQuote};
+	case KEY_COMMA:      return shift ? fnSymbol('5', true) : KeyMapping{EStdKeyComma};      // <
+	case KEY_DOT:        return shift ? fnSymbol('6', true) : KeyMapping{EStdKeyFullStop};   // >
+	case KEY_SLASH: {
+		// the Psion types / as Shift+comma, and ? as Shift+full stop
+		if (shift)
+			return {EStdKeyFullStop};
+		KeyMapping k{EStdKeyComma};
+		k.addShift = true;
+		return k;
+	}
+	case KEY_SEMICOLON:  return fnSymbol('L');                                            // ; and :
+	case KEY_LEFTBRACE:  return shift ? fnSymbol('9', true) : fnSymbol('7');              // { [
+	case KEY_RIGHTBRACE: return shift ? fnSymbol('0', true) : fnSymbol('8');              // } ]
+	case KEY_MINUS:      return shift ? fnSymbol('1', true) : fnSymbol('O');              // _ -
+	case KEY_EQUAL:      return shift ? fnSymbol('I', true) : fnSymbol('P');              // + =
+	case KEY_BACKSLASH:  return fnSymbol('3');                                            // backslash, Shift kept for CyrLat
 	case KEY_SPACE:      return {EStdKeySpace, false};
 	case KEY_LEFTSHIFT:  return {EStdKeyLeftShift, false};
-	case KEY_RIGHTSHIFT: return {EStdKeyRightShift, false};
 	case KEY_LEFTCTRL:
 	case KEY_RIGHTCTRL:  return {EStdKeyLeftCtrl, false};
 	case KEY_LEFTALT:    return {EStdKeyLeftFunc, false};
+	// phone keyboards often lack all of these but Right Shift
+	case KEY_RIGHTSHIFT:
 	case KEY_RIGHTALT:
 	case KEY_COMPOSE:
 	case KEY_F1:         return {EStdKeyMenu, false};
@@ -267,6 +358,10 @@ void PDAScreenWindow::keyPressEvent(QKeyEvent *event)
 	heldKeys.insert(hostKeyId(event), k);
 	if (k.dropCtrl)
 		emu->setKeyboardKey(EStdKeyLeftCtrl, false);
+	if (k.dropShift)
+		setShiftKeys(false);
+	if (k.addShift)
+		emu->setKeyboardKey(EStdKeyLeftShift, true);
 	if (k.withFn) {
 		// EPOC must see Fn held before the key, as when a person presses them
 		emu->setKeyboardKey(EStdKeyLeftFunc, true);
@@ -290,24 +385,71 @@ void PDAScreenWindow::keyReleaseEvent(QKeyEvent *event)
 		QTimer::singleShot(2 * ComboKeyDelayMs, this, [this, k] {
 			emu->setKeyboardKey(k.key, false);
 			emu->setKeyboardKey(EStdKeyLeftFunc, false);
+			if (k.dropShift)
+				setShiftKeys(true);
 		});
 	} else {
 		emu->setKeyboardKey(k.key, false);
+		if (k.dropShift)
+			setShiftKeys(true);
 	}
+	if (k.addShift)
+		emu->setKeyboardKey(EStdKeyLeftShift, false);
+}
+
+// Releases the Shift keys the host is holding down, or presses them again
+void PDAScreenWindow::setShiftKeys(bool pressed)
+{
+	for (const KeyMapping &held : heldKeys)
+		if (held.key == EStdKeyLeftShift || held.key == EStdKeyRightShift)
+			emu->setKeyboardKey(held.key, pressed);
 }
 
 
+// Where a touch at pos lands on the digitiser, for the area the touch began in
+bool PDAScreenWindow::touchPoint(const QPoint &pos, QPoint &digitiserPos) const
+{
+	switch (touchArea) {
+	case TouchAnywhere:
+		digitiserPos = pos;
+		return true;
+	case TouchLcd: {
+		// a drag that strays off the LCD stays on its edge
+		int x = qBound(lcdRect.left(), pos.x(), lcdRect.right());
+		int y = qBound(lcdRect.top(), pos.y(), lcdRect.bottom());
+		digitiserPos = QPoint(x - lcdRect.left() + emu->getLCDOffsetX(), y - lcdRect.top() + emu->getLCDOffsetY());
+		return true;
+	}
+	case TouchButton:
+		digitiserPos = touchTarget;
+		return true;
+	default:
+		return false;
+	}
+}
+
 void PDAScreenWindow::mousePressEvent(QMouseEvent *event)
 {
-	emu->updateTouchInput(event->x(), event->y(), true);
-
-	QLabel *hit = nullptr;
-	for (const auto &button : panelButtons) {
-		if (button.cellRect.contains(event->pos())) {
-			hit = button.label;
-			break;
+	if (!compact) {
+		touchArea = TouchAnywhere;
+	} else if (lcdRect.contains(event->pos())) {
+		touchArea = TouchLcd;
+	} else {
+		touchArea = TouchNone;
+		for (const auto &button : panelButtons) {
+			if (button.cellRect.contains(event->pos())) {
+				touchArea = TouchButton;
+				touchTarget = button.target;
+				break;
+			}
 		}
 	}
+
+	QPoint pos;
+	if (touchPoint(event->pos(), pos))
+		emu->updateTouchInput(pos.x(), pos.y(), true);
+
+	QLabel *hit = panelLabelAt(event->pos());
 	if (hit != pressedPanelLabel) {
 		setPanelLabelPressed(pressedPanelLabel, false);
 		pressedPanelLabel = hit;
@@ -317,7 +459,10 @@ void PDAScreenWindow::mousePressEvent(QMouseEvent *event)
 
 void PDAScreenWindow::mouseReleaseEvent(QMouseEvent *event)
 {
-	emu->updateTouchInput(event->x(), event->y(), false);
+	QPoint pos;
+	if (touchPoint(event->pos(), pos))
+		emu->updateTouchInput(pos.x(), pos.y(), false);
+	touchArea = TouchNone;
 
 	setPanelLabelPressed(pressedPanelLabel, false);
 	pressedPanelLabel = nullptr;
@@ -326,15 +471,12 @@ void PDAScreenWindow::mouseReleaseEvent(QMouseEvent *event)
 void PDAScreenWindow::mouseMoveEvent(QMouseEvent *event)
 {
 	if (event->buttons() & Qt::LeftButton) {
-		emu->updateTouchInput(event->x(), event->y(), true);
+		QPoint pos;
+		if (touchPoint(event->pos(), pos))
+			emu->updateTouchInput(pos.x(), pos.y(), true);
 
-		QLabel *hit = nullptr;
-		for (const auto &button : panelButtons) {
-			if (button.cellRect.contains(event->pos())) {
-				hit = button.label;
-				break;
-			}
-		}
+		// in the compact layout, a button stays pressed until the touch ends
+		QLabel *hit = compact ? pressedPanelLabel : panelLabelAt(event->pos());
 		if (hit != pressedPanelLabel) {
 			setPanelLabelPressed(pressedPanelLabel, false);
 			pressedPanelLabel = hit;
