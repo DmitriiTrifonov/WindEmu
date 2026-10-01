@@ -42,6 +42,8 @@ Pass a folder or a raw disk image with `--cf` to put a card in the CF slot, wher
     ./run.sh /path/to/5mx.bin --cf ~/psion-card
     ./run.sh /path/to/5mx.bin --cf card.img
 
+Without `--cf`, `run.sh` uses the folder in `$WINDEMU_CF`, or `~/psion-card` (creating it if need be); set `WINDEMU_CF=` to leave the slot empty.
+
 A folder is turned into a FAT16 volume when the emulator starts, with 64MB of free space for EPOC to use. When the emulator quits, whatever EPOC created, changed or deleted on the card is copied back into the folder. Files that were changed in the folder while the emulator was running are kept rather than deleted, but EPOC's version wins if both sides changed the same file, so it's best to leave the folder alone until the emulator has quit. If the volume can't be read back (say, EPOC reformatted it as something other than FAT16), the emulator says so and keeps the volume's image in the temporary folder.
 
 An image needs a partition table with a FAT16 partition, like a card formatted on a PC. To make an empty 32MB one:

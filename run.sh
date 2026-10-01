@@ -2,9 +2,22 @@
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
-# usage: run.sh [ROM] [--cold-boot] [--cf CF_IMAGE]
+# usage: run.sh [ROM] [--cold-boot] [--cf CF_FOLDER_OR_IMAGE]
 ROM="${1:-/home/user/roms/sys_rom.bin}"
 [ $# -gt 0 ] && shift
+
+# A CF card goes in the slot unless one is given: the folder in $WINDEMU_CF,
+# or ~/psion-card. An empty $WINDEMU_CF leaves the slot empty.
+case " $* " in
+*" --cf "*) ;;
+*)
+	CF="${WINDEMU_CF-$HOME/psion-card}"
+	if [ -n "$CF" ]; then
+		[ -e "$CF" ] || mkdir -p "$CF"
+		set -- "$@" --cf "$CF"
+	fi
+	;;
+esac
 
 # The interpreter is single-threaded and runs ~2x faster on big cores
 bigcores=""
