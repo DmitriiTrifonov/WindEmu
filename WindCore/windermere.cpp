@@ -166,6 +166,10 @@ uint32_t Emulator::readReg32(uint32_t reg) {
         uint16_t v = currentRTC() >> 16;
 //		log("RTCDRU: %04x", v);
         return v;
+    } else if (reg == RTCMRL) {
+        return rtcMatch & 0xFFFF;
+    } else if (reg == RTCMRU) {
+        return rtcMatch >> 16;
     } else if (reg == KSCAN) {
         return kScan;
     } else {
@@ -292,6 +296,14 @@ void Emulator::writeReg32(uint32_t reg, uint32_t value) {
 			coldBootRtcWrites |= (reg == RTCDRL) ? 1 : 2;
 			rtcOffset = 0;
 		}
+	} else if (reg == RTCMRL) {
+		// EPOC writes the upper half first
+		rtcMatch = (rtcMatch & 0xFFFF0000) | (value & 0xFFFF);
+		log("RTC alarm set %d s ahead", (int)(rtcMatch - currentRTC()));
+	} else if (reg == RTCMRU) {
+		rtcMatch = (rtcMatch & 0x0000FFFF) | ((value & 0xFFFF) << 16);
+	} else if (reg == RTCEOI) {
+		pendingInterrupts &= ~(1 << RTCMI);
 	} else {
 //		printf("RegWrite32 unknown:: pc=%08x reg=%03x value=%08x\n", getGPR(15)-4, reg, value);
 	}
@@ -501,8 +513,8 @@ uint64_t Emulator::romHash() const {
 
 void Emulator::serialize(StateIO &io) {
 	static const char Magic[8] = {'W', 'i', 'n', 'd', 'E', 'm', 'u', 'S'};
-	// version 2 added the CF socket and card
-	enum { Version = 2 };
+	// version 2 added the CF socket and card, version 3 the RTC alarm
+	enum { Version = 3 };
 	char magic[8];
 	uint32_t version = Version;
 	uint64_t hash = romHash();
@@ -527,6 +539,10 @@ void Emulator::serialize(StateIO &io) {
 	io.pod(lcdControl);
 	io.pod(lcdAddress);
 	io.pod(rtcOffset);
+	if (version >= 3) {
+		io.pod(rtcMatch);
+		io.pod(lastRtc);
+	}
 	io.pod(coldBootRtcWrites);
 	io.pod(lastSSIRequest);
 	io.pod(ssiReadCounter);
@@ -587,6 +603,9 @@ void Emulator::executeUntil(int64_t cycles) {
 	if (!configured)
 		configure();
 
+	// the RTC alarm also wakes the Psion from standby
+	checkRtcAlarm();
+
 	if (asleep) {
 		// clocks are stopped in standby: time passes but timers don't tick
 		if (cycles > passedCycles) {
@@ -610,6 +629,7 @@ void Emulator::executeUntil(int64_t cycles) {
 
 			nextTickAt += TICK_INTERVAL;
 			pendingInterrupts |= (1<<TINT);
+			checkRtcAlarm();
 		}
 		if (tc1.tick(passedCycles))
 			pendingInterrupts |= (1<<TC1OI);
@@ -782,6 +802,26 @@ int Emulator::getLCDHeight()       const { return 240; }
 // TODO move this elsewhere
 static bool initRgbValues = false;
 static uint32_t rgbValues[16];
+
+// Raises the RTC match interrupt once the clock passes the alarm time; that
+// includes time that went by while the emulator wasn't running
+void Emulator::checkRtcAlarm() {
+	uint32_t now = currentRTC();
+	if (now == lastRtc)
+		return;
+	// the alarm lies in (lastRtc, now], allowing for the clock being set back
+	bool due = (now > lastRtc) && rtcMatch > lastRtc && rtcMatch <= now;
+	lastRtc = now;
+	if (!due)
+		return;
+	log("RTC alarm at %08x", rtcMatch);
+	pendingInterrupts |= (1 << RTCMI);
+	if (asleep) {
+		asleep = false;
+		mediaChangeAt = passedCycles + MediaChangeDelay;
+		log("Woken from standby by the alarm");
+	}
+}
 
 void Emulator::setPowerSupply(int batteryPercent, bool external) {
 	// EPOC reads the main batteries' level as about 1000 per volt, offset by

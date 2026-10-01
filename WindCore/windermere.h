@@ -25,6 +25,9 @@ private:
     uint32_t lcdAddress = 0;
     int64_t rtcOffset = 0; // RTC value minus host time, so the clock tracks the host even when emulation lags
 	uint8_t coldBootRtcWrites = 0;
+	uint32_t rtcMatch = 0; // the RTC alarm
+	uint32_t lastRtc = 0;  // the RTC when the alarm was last checked
+	void checkRtcAlarm();
 	uint32_t localeCountryCode = 0;
 	int homeOffset = 0;
 	void detectHomeOffset(size_t romSize);

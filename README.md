@@ -15,7 +15,7 @@ Psion 5mx (EPOC R5) features:
 - ✅ ETNA (PCMCIA/CompactFlash): CF card backed by a disk image (see below); ETNA's UART is not emulated
 - ✅ Batteries: the main batteries follow the host's battery charge, and a charger shows as external power
 - ✅ RTC: implemented
-- ❌ RTC alarm: not implemented
+- ✅ RTC alarm: implemented; it wakes the Psion, and an alarm due while the emulator was closed goes off when it next starts
 - ✅ Standby mode: implemented; Esc wakes the Psion
 - ✅ Saved state: on quit the Psion is switched off and saved, and resumed on the next start (`--cold-boot` starts afresh)
 
