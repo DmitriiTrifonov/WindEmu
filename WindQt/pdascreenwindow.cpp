@@ -114,10 +114,20 @@ PDAScreenWindow::PDAScreenWindow(EmuBase *emu, bool compactLayout, QWidget *pare
 
 void PDAScreenWindow::updateScreen() {
 	uint8_t *lines[1024];
-	QImage img(emu->getLCDWidth(), emu->getLCDHeight(), QImage::Format_Grayscale8);
+	QImage img(emu->getLCDWidth(), emu->getLCDHeight(), QImage::Format_Indexed8);
 	for (int y = 0; y < img.height(); y++)
 		lines[y] = img.scanLine(y);
 	emu->readLCDIntoBuffer(lines, false);
+
+	// the grey levels, tinted the blue-green of the 5mx's backlight while it's on
+	static QVector<QRgb> plain, lit;
+	if (plain.isEmpty()) {
+		for (int i = 0; i < 256; i++) {
+			plain.append(qRgb(i, i, i));
+			lit.append(qRgb(i * 0xC8 / 255, i * 0xF0 / 255, i * 0xEC / 255));
+		}
+	}
+	img.setColorTable(emu->isBacklightOn() ? lit : plain);
 
 	// skip unchanged frames, which are costly to redraw when scaled
 	if (img == lastFrame)
@@ -280,10 +290,11 @@ static KeyMapping mapKey(const QKeyEvent *event) {
 	case KEY_LEFTSHIFT:  return {EStdKeyLeftShift, false};
 	case KEY_LEFTCTRL:
 	case KEY_RIGHTCTRL:  return {EStdKeyLeftCtrl, false};
-	case KEY_LEFTALT:    return {EStdKeyLeftFunc, false};
+	// either Alt, as small keyboards often have just the right one
+	case KEY_LEFTALT:
+	case KEY_RIGHTALT:   return {EStdKeyLeftFunc, false};
 	// phone keyboards often lack all of these but Right Shift
 	case KEY_RIGHTSHIFT:
-	case KEY_RIGHTALT:
 	case KEY_COMPOSE:
 	case KEY_F1:         return {EStdKeyMenu, false};
 	case KEY_UP:         return {EStdKeyUpArrow, false};

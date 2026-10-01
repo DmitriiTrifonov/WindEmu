@@ -7,7 +7,7 @@ WindEmu is an attempt to emulate various Psion PDAs.
 
 Psion 5mx (EPOC R5) features:
 
-- ✅ LCD: implemented
+- ✅ LCD: implemented, with its contrast setting and backlight (Fn+Space)
 - ✅ Keyboard: implemented
 - ✅ Touch panel: implemented
 - ❌ Audio: not implemented
@@ -15,7 +15,8 @@ Psion 5mx (EPOC R5) features:
 - ✅ ETNA (PCMCIA/CompactFlash): CF card backed by a disk image (see below); ETNA's UART is not emulated
 - ✅ RTC: implemented
 - ❌ RTC alarm: not implemented
-- ❌ Standby mode: not implemented
+- ✅ Standby mode: implemented; Esc wakes the Psion
+- ✅ Saved state: on quit the Psion is switched off and saved, and resumed on the next start (`--cold-boot` starts afresh)
 
 Oregon Scientific Osaris (EPOC R4) features:
 
@@ -31,7 +32,6 @@ Oregon Scientific Osaris (EPOC R4) features:
 
 Known issues:
 
-- State is not saved (just like a real Psion :p)
 - EPOC misbehaves massively with memory banks larger than 0x800000 (may be an OS design flaw? need to confirm)
 
 Full screen
@@ -66,7 +66,7 @@ Change an image only while the emulator is closed. When a saved state is resumed
 Russian input
 -------------
 
-Keys map by position, so the host layout doesn't matter, and the punctuation keys type what they do on a PC with a US layout (using the Psion's Fn and Shift combinations for the symbols it lacks keys for). With the CyrLat keyboard driver installed on the Psion, `extras/cyrlat-pc-russian.kbt` makes the Cyrillic layout match a PC's ЙЦУКЕН: copy it to the CF card, then in Control panel > CyrLat > Keyboard layouts, Edit the Cyr layout, open its Map table and hold Fn (Alt on the host) while tapping Load. Ctrl+Menu (Ctrl with Right Shift, Right Alt or F1 on the host) switches between the layouts. Documents need a font with Cyrillic in its CP-1251 positions to show the letters.
+Keys map by position, so the host layout doesn't matter, and the punctuation keys type what they do on a PC with a US layout (using the Psion's Fn and Shift combinations for the symbols it lacks keys for). With the CyrLat keyboard driver installed on the Psion, `extras/cyrlat-pc-russian.kbt` makes the Cyrillic layout match a PC's ЙЦУКЕН: copy it to the CF card, then in Control panel > CyrLat > Keyboard layouts, Edit the Cyr layout, open its Map table and hold Fn (Alt on the host) while tapping Load. Ctrl+Menu (Ctrl with Right Shift or F1 on the host) switches between the layouts. Documents need a font with Cyrillic in its CP-1251 positions to show the letters.
 
 Copyright
 ---------

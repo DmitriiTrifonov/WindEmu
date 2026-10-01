@@ -149,6 +149,7 @@ public:
 	virtual int getLCDWidth() const = 0;
 	virtual int getLCDHeight() const = 0;
 	virtual void readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const = 0;
+	virtual bool isBacklightOn() const { return false; }
 	virtual void setKeyboardKey(EpocKey key, bool value) = 0;
 	virtual void updateTouchInput(int32_t x, int32_t y, bool down) = 0;
 

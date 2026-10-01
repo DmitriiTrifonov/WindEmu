@@ -1,4 +1,5 @@
 #include "windermere.h"
+#include <math.h>
 #include "wind_defs.h"
 #include "hardware.h"
 #include <time.h>
@@ -793,6 +794,25 @@ void Emulator::readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const {
 		}
 	}
 
+	// Port B bits 2-5 hold 16 minus the contrast EPOC sets (1-15, 12 by default).
+	// At 12 the image is shown as it is; above it ink and paper get darker, and
+	// below it the ink fades.
+	int contrast = 16 - ((portValues >> 18) & 0xF);
+	if (contrast > 15) contrast = 15;
+	double gamma = pow(2.0, (12 - contrast) / 4.0);
+	double paper = (contrast > 12) ? (contrast - 12) * 0.04 : 0.0;
+	uint8_t grey[16];
+	uint32_t rgb[16];
+	for (int i = 0; i < 16; i++) {
+		double darkness = paper + (1.0 - paper) * pow(i / 15.0, gamma);
+		grey[i] = (uint8_t)(255.5 - darkness * 255);
+		uint32_t light = rgbValues[0];
+		uint32_t r = (uint32_t)((light & 0xFF) * (1.0 - darkness));
+		uint32_t g = (uint32_t)(((light >> 8) & 0xFF) * (1.0 - darkness));
+		uint32_t b = (uint32_t)(((light >> 16) & 0xFF) * (1.0 - darkness));
+		rgb[i] = r | (g << 8) | (b << 16) | 0xFF000000;
+	}
+
 	if ((lcdAddress >> 24) == 0xC0) {
 		const uint8_t *lcdBuf = &MemoryBlockC0[lcdAddress & MemoryBlockMask];
 		int width = 640, height = 240;
@@ -817,10 +837,9 @@ void Emulator::readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const {
 
 				if (is32BitOutput) {
 					auto line = (uint32_t *)lines[y];
-					line[x] = rgbValues[palValue];
+					line[x] = rgb[palValue];
 				} else {
-					palValue |= (palValue << 4);
-					lines[y][x] = palValue ^ 0xFF;
+					lines[y][x] = grey[palValue];
 				}
 			}
 		}

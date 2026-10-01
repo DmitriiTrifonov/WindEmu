@@ -85,6 +85,7 @@ public:
 	int getLCDWidth() const override;
 	int getLCDHeight() const override;
 	void readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const override;
+	bool isBacklightOn() const override { return portValues & 0x1000; }
 	void setKeyboardKey(EpocKey key, bool value) override;
 	void updateTouchInput(int32_t x, int32_t y, bool down) override;
 
