@@ -6,8 +6,15 @@
 #include <QMessageBox>
 #include <QStandardPaths>
 #include <QTimer>
+#include <QSocketNotifier>
 #include <algorithm>
 #include <cstdio>
+#ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <stdlib.h>
+#include <termios.h>
+#include <unistd.h>
+#endif
 #include "../WindCore/clps7111.h"
 #include "../WindCore/windermere.h"
 
@@ -94,12 +101,63 @@ static void saveState(EmuBase *emu, const QString &path)
 	}
 }
 
+#ifdef Q_OS_UNIX
+// Connects the Psion's RS-232 port to a pseudo-terminal, with a link to it at
+// linkPath, so that programs on the host (plptools' ncpd, a terminal) can use it
+static bool bridgeSerialPort(EmuBase *emu, const QString &linkPath)
+{
+	int master = posix_openpt(O_RDWR | O_NOCTTY | O_NONBLOCK);
+	if (master < 0 || grantpt(master) != 0 || unlockpt(master) != 0)
+		return false;
+	QByteArray slavePath = ptsname(master);
+	// hold the other end open too, so the port stays usable between clients
+	int slave = open(slavePath.constData(), O_RDWR | O_NOCTTY);
+	if (slave < 0)
+		return false;
+	struct termios tio;
+	if (tcgetattr(slave, &tio) == 0) {
+		cfmakeraw(&tio);
+		tcsetattr(slave, TCSANOW, &tio);
+	}
+
+	QByteArray link = QFile::encodeName(linkPath);
+	unlink(link.constData());
+	if (symlink(slavePath.constData(), link.constData()) != 0)
+		return false;
+	fprintf(stderr, "Serial port at %s, linked from %s\n", slavePath.constData(), link.constData());
+
+	const int port = 1;
+	emu->setSerialConnected(port, true);
+	emu->setSerialTransmitter(port, [master](uint8_t byte) {
+		// with nothing reading, the pty fills up and the rest is dropped
+		if (write(master, &byte, 1) != 1) { }
+	});
+	auto notifier = new QSocketNotifier(master, QSocketNotifier::Read, qApp);
+	QObject::connect(notifier, &QSocketNotifier::activated, [emu, master] {
+		uint8_t buffer[4096];
+		ssize_t got = read(master, buffer, sizeof(buffer));
+		if (got > 0)
+			emu->serialReceive(port, buffer, got);
+	});
+	QObject::connect(qApp, &QCoreApplication::aboutToQuit, [link] { unlink(link.constData()); });
+	(void)slave;
+	return true;
+}
+#endif
+
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
 	auto args = a.arguments();
 	bool coldBoot = args.removeAll(QStringLiteral("--cold-boot")) > 0;
 	bool fullScreen = args.removeAll(QStringLiteral("--fullscreen")) > 0;
+	QString serialLink;
+	int serialIndex = args.indexOf(QStringLiteral("--serial"));
+	if (serialIndex > 0 && serialIndex + 1 < args.length()) {
+		serialLink = args.at(serialIndex + 1);
+		args.removeAt(serialIndex + 1);
+		args.removeAt(serialIndex);
+	}
 	QString cfImage;
 	int cfIndex = args.indexOf(QStringLiteral("--cf"));
 	if (cfIndex > 0 && cfIndex + 1 < args.length()) {
@@ -156,6 +214,11 @@ int main(int argc, char *argv[])
 			insertCard(emu);
 		}
 	}
+
+#ifdef Q_OS_UNIX
+	if (!serialLink.isEmpty() && !bridgeSerialPort(emu, serialLink))
+		fprintf(stderr, "Could not set up the serial port at %s\n", qPrintable(serialLink));
+#endif
 
 	MainWindow w(emu, fullScreen);
 	w.setCardPath(cfImage);

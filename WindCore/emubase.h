@@ -1,5 +1,6 @@
 #pragma once
 #include "arm710.h"
+#include <functional>
 #include <stdio.h>
 #include <unordered_set>
 
@@ -136,6 +137,12 @@ public:
 	// Takes the card out, copying any changes back when it came from a folder
 	virtual bool ejectCFCard() { return true; }
 	virtual bool hasCFCard() const { return false; }
+
+	// Serial ports: on the Series 5mx, 1 is the RS-232 port (EPOC's "Serial port 0")
+	// and 0 the other UART. The Psion's transmissions go to transmit.
+	virtual void setSerialTransmitter(int port, std::function<void(uint8_t)> transmit) { (void)port; (void)transmit; }
+	virtual void setSerialConnected(int port, bool connected) { (void)port; (void)connected; }
+	virtual void serialReceive(int port, const uint8_t *data, size_t length) { (void)port; (void)data; (void)length; }
 
 	virtual uint8_t *getROMBuffer() = 0;
 	virtual size_t getROMSize() = 0;

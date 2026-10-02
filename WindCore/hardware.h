@@ -1,6 +1,8 @@
 #pragma once
 #include "arm710.h"
 #include <stdio.h>
+#include <deque>
+#include <functional>
 
 struct Timer {
 	ARM710 *cpu;
@@ -105,11 +107,71 @@ struct UART {
 		FlagDataCarrierDetect = 4,
 		FlagBusy = 8,
 		FlagReceiveFifoEmpty = 0x10,
-		FlagTransmitFifoFull = 0x20
+		FlagTransmitFifoFull = 0x20,
+		FifoSize = 16
 	};
 	uint8_t portControl = 0;
 	uint8_t frameControl = 0;
 	uint8_t interrupts = 0, interruptMask = 0;
+	uint32_t lineControl = 0;
+
+	// What the Psion sends goes straight out through transmit (so the
+	// transmitter is never busy); what arrives waits in rxQueue until the
+	// receive FIFO has room for it.
+	std::function<void(uint8_t)> transmit;
+	std::deque<uint8_t> rxFifo, rxQueue;
+	// whether something is connected, raising CTS, DSR and DCD
+	bool connected = false;
+	// the modem lines changed, and EPOC hasn't yet acknowledged it
+	bool modemStatusChanged = false;
+	void setConnected(bool c) {
+		if (c != connected)
+			modemStatusChanged = true;
+		connected = c;
+	}
+
+	int fifoDepth() const { return (frameControl & FrameCtrlUFifoEn) ? FifoSize : 1; }
+
+	// fills the receive FIFO from the queue; called often
+	void poll() {
+		while (!rxQueue.empty() && (int)rxFifo.size() < fifoDepth()) {
+			rxFifo.push_back(rxQueue.front());
+			rxQueue.pop_front();
+		}
+	}
+
+	uint8_t rawInterrupts() const {
+		uint8_t raw = IntTx; // the transmit FIFO always has room
+		if (!rxFifo.empty())
+			raw |= IntRx;
+		if (modemStatusChanged)
+			raw |= IntModemStatus;
+		return raw;
+	}
+	bool interruptPending() const {
+		return (portControl & PortCtrlEnable) && (rawInterrupts() & interruptMask);
+	}
+
+	uint8_t flags() const {
+		uint8_t f = 0;
+		if (rxFifo.empty())
+			f |= FlagReceiveFifoEmpty;
+		// EPOC reads CTS and DCD as active low, and DSR as active high
+		if (connected)
+			f |= FlagDataSetReady;
+		else
+			f |= FlagClearToSend | FlagDataCarrierDetect;
+		return f;
+	}
+
+	uint32_t readData() {
+		if (rxFifo.empty())
+			return 0;
+		uint8_t byte = rxFifo.front();
+		rxFifo.pop_front();
+		poll();
+		return byte;
+	}
 
 	// UART0DATA = 0x600, byte write, long read
 	// UART0FCR = 0x604, long
@@ -119,67 +181,40 @@ struct UART {
 	// UART0INT = 0x614, long write, byte read
 	// UART0INTM = 0x618, byte
 	// UART0INTR = 0x61C, byte
-	// UART0TEST1 = 0x620,
-	// UART0TEST2 = 0x624,
-	// UART0TEST3 = 0x628,
-	uint32_t readReg8(uint32_t reg) {
-		// UART0DATA
-		if (reg == (UART0CON & 0xFF)) {
-			return portControl;
-		} else if (reg == (UART0FLG & 0xFF)) {
-			// we pretend we are never busy, never have full fifo
-			return FlagReceiveFifoEmpty;
-		// UART0INT?
-		// UART0INTM?
-		// UART0INTR?
-		} else {
-			printf("unhandled 8bit uart read %x at pc=%08x lr=%08x\n", reg, cpu->getGPR(15), cpu->getGPR(14));
-			return 0xFF;
+	uint32_t readReg(uint32_t reg) {
+		switch (reg) {
+		case UART0DATA & 0xFF: return readData();
+		case UART0FCR & 0xFF:  return frameControl;
+		case UART0LCR & 0xFF:  return lineControl;
+		case UART0CON & 0xFF:  return portControl;
+		case UART0FLG & 0xFF:  return flags();
+		// EPOC treats INTR as the masked status, and INT as the raw one
+		case UART0INT & 0xFF:  return rawInterrupts();
+		case UART0INTM & 0xFF: return interruptMask;
+		case UART0INTR & 0xFF: return rawInterrupts() & interruptMask;
 		}
+		return 0;
 	}
-	uint32_t readReg32(uint32_t reg) {
-		// UART0DATA
-		if (reg == (UART0FCR & 0xFF)) {
-			return frameControl;
-		// UART0LCR
-		} else if (reg == (UART0FLG & 0xFF)) {
-			// we pretend we are never busy, never have full fifo
-			return FlagReceiveFifoEmpty;
-		} else {
-			printf("unhandled 32bit uart read %x at pc=%08x lr=%08x\n", reg, cpu->getGPR(15), cpu->getGPR(14));
-			return 0xFFFFFFFF;
-		}
-	}
-	void writeReg8(uint32_t reg, uint8_t value) {
-		// UART0DATA
-		if (reg == (UART0CON & 0xFF)) {
+	void writeReg(uint32_t reg, uint32_t value) {
+		switch (reg) {
+		case UART0DATA & 0xFF:
+			if ((portControl & PortCtrlEnable) && transmit)
+				transmit(value & 0xFF);
+			break;
+		case UART0FCR & 0xFF:  frameControl = value; break;
+		case UART0LCR & 0xFF:  lineControl = value; break;
+		case UART0CON & 0xFF:
+			// a port being switched on finds out about the lines' state
+			if ((value & PortCtrlEnable) && !(portControl & PortCtrlEnable) && connected)
+				modemStatusChanged = true;
 			portControl = value;
-			printf("portcon updated: enable=%d sirenable=%d irdatx=%d\n", value&1, value&2, value&4);
-		} else if (reg == (UART0INTM & 0xFF)) {
-			interruptMask = value;
-			printf("uart interruptmask updated: %d\n", value);
-		// UART0INTR?
-		} else {
-			printf("unhandled 8bit uart write %x value %02x at pc=%08x lr=%08x\n", reg, value, cpu->getGPR(15), cpu->getGPR(14));
+			break;
+		case UART0INT & 0xFF:  modemStatusChanged = false; break; // acknowledges a modem status change
+		case UART0INTM & 0xFF: interruptMask = value; break;
 		}
 	}
-	void writeReg32(uint32_t reg, uint32_t value) {
-		if (reg == (UART0FCR & 0xFF)) {
-			frameControl = value;
-			printf("frameControl updated: break=%d parityEn=%d evenParity=%d extraStop=%d ufifoEn=%d wrdLen=%d\n",
-				value&1,
-				value&2,
-				value&4,
-				value&8,
-				value&0x10,
-				((value&0x60)>>5)+5);
-		} else if (reg == (UART0LCR & 0xFF)) {
-			printf("** uart writing lcr %x **\n", value);
-		} else if (reg == (UART0INT & 0xFF)) {
-			printf("uart interrupts %x -> %x\n", interrupts, value);
-			interrupts = value;
-		} else {
-			printf("unhandled 32bit uart write %x value %08x at pc=%08x lr=%08x\n", reg, value, cpu->getGPR(15), cpu->getGPR(14));
-		}
-	}
+	uint32_t readReg8(uint32_t reg) { return readReg(reg); }
+	uint32_t readReg32(uint32_t reg) { return readReg(reg); }
+	void writeReg8(uint32_t reg, uint8_t value) { writeReg(reg, value); }
+	void writeReg32(uint32_t reg, uint32_t value) { writeReg(reg, value); }
 };

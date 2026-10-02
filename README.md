@@ -11,7 +11,7 @@ Psion 5mx (EPOC R5) features:
 - ✅ Keyboard: implemented
 - ✅ Touch panel: implemented
 - ❌ Audio: not implemented
-- ❌ Serial/UART support: stubbed out
+- ✅ Serial port: the RS-232 port can be connected to a pseudo-terminal on the host (see below); infrared is not emulated
 - ✅ ETNA (PCMCIA/CompactFlash): CF card backed by a disk image (see below); ETNA's UART is not emulated
 - ✅ Batteries: the main batteries follow the host's battery charge, and a charger shows as external power
 - ✅ RTC: implemented
@@ -34,6 +34,15 @@ Oregon Scientific Osaris (EPOC R4) features:
 Known issues:
 
 - EPOC misbehaves massively with memory banks larger than 0x800000 (may be an OS design flaw? need to confirm)
+
+Serial port (Series 5mx)
+------------------------
+
+`--serial PATH` connects the Psion's RS-232 port to a pseudo-terminal and links it from PATH, as if a cable were plugged in:
+
+    ./run.sh /path/to/5mx.bin --serial /tmp/psion-serial
+
+EPOC's remote link (System > Tools > Remote link, on Cable by default) then talks to whatever opens PATH, such as plptools' `ncpd -s /tmp/psion-serial -b 115200` for backups and file transfer from Linux. With the remote link off, the Comms program can use the port as a terminal. The baud rate makes no difference.
 
 Full screen
 -----------

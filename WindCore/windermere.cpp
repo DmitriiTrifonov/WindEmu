@@ -642,6 +642,15 @@ void Emulator::executeUntil(int64_t cycles) {
 			pendingInterrupts |= (1 << MCINT);
 		}
 
+		// so are the UARTs'
+		uart1.poll();
+		uart2.poll();
+		pendingInterrupts &= ~((1 << UART1) | (1 << UART2));
+		if (uart1.interruptPending())
+			pendingInterrupts |= (1 << UART1);
+		if (uart2.interruptPending())
+			pendingInterrupts |= (1 << UART2);
+
 		// ETNA's interrupt line is level-triggered
 		pendingInterrupts &= ~(1 << EINT1);
 		if (etna.irqActive())
@@ -802,6 +811,27 @@ int Emulator::getLCDHeight()       const { return 240; }
 // TODO move this elsewhere
 static bool initRgbValues = false;
 static uint32_t rgbValues[16];
+
+UART *Emulator::serialPort(int port) {
+	return port == 0 ? &uart1 : port == 1 ? &uart2 : nullptr;
+}
+
+void Emulator::setSerialTransmitter(int port, std::function<void(uint8_t)> transmit) {
+	if (UART *u = serialPort(port))
+		u->transmit = transmit;
+}
+
+void Emulator::setSerialConnected(int port, bool connected) {
+	if (UART *u = serialPort(port))
+		u->setConnected(connected);
+}
+
+void Emulator::serialReceive(int port, const uint8_t *data, size_t length) {
+	if (UART *u = serialPort(port)) {
+		u->rxQueue.insert(u->rxQueue.end(), data, data + length);
+		u->poll();
+	}
+}
 
 // A card going in or out while EPOC runs comes with the door being opened and closed
 bool Emulator::insertCFCard(const char *imagePath) {

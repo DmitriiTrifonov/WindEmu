@@ -50,6 +50,7 @@ private:
 	int mediaChangesDue = 0;
 	int64_t mediaChangeAt = 0;
 
+    UART *serialPort(int port);
     uint32_t getRTC();
     uint32_t currentRTC();
 
@@ -83,6 +84,9 @@ public:
 	bool insertCFCard(const char *imagePath) override;
 	bool ejectCFCard() override;
 	bool hasCFCard() const override { return etna.hasCard(); }
+	void setSerialTransmitter(int port, std::function<void(uint8_t)> transmit) override;
+	void setSerialConnected(int port, bool connected) override;
+	void serialReceive(int port, const uint8_t *data, size_t length) override;
 	void executeUntil(int64_t cycles) override;
 	int32_t getClockSpeed() const override { return CLOCK_SPEED; }
 	const char *getDeviceName() const override;
