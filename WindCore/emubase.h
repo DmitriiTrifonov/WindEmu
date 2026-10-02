@@ -158,6 +158,9 @@ public:
 	virtual int getLCDHeight() const = 0;
 	virtual void readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const = 0;
 	virtual bool isBacklightOn() const { return false; }
+	// Takes up to maxSamples of the sound made so far: mono, 16-bit, at AudioSampleRate
+	enum { AudioSampleRate = 16000 };
+	virtual size_t readAudio(int16_t *out, size_t maxSamples) { (void)out; (void)maxSamples; return 0; }
 	// Reports the host's battery charge and whether it's on external power
 	virtual void setPowerSupply(int batteryPercent, bool externalPower) { (void)batteryPercent; (void)externalPower; }
 	virtual void setKeyboardKey(EpocKey key, bool value) = 0;

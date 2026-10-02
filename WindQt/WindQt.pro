@@ -24,13 +24,17 @@ CONFIG += c++17
 QMAKE_MACOSX_DEPLOYMENT_TARGET = 10.14
 
 SOURCES += \
+        audiooutput.cpp \
         main.cpp \
         mainwindow.cpp \
         pdascreenwindow.cpp
 
 HEADERS += \
+        audiooutput.h \
         mainwindow.h \
         pdascreenwindow.h
+
+linux: LIBS += -lasound
 
 FORMS += \
         mainwindow.ui

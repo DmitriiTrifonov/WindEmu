@@ -42,6 +42,24 @@ private:
     UART uart1, uart2;
 	Etna etna;
 	bool halted = false, asleep = false;
+	int64_t nextDeviceCheck = 0;
+	enum { DeviceCheckInterval = 32 }; // cycles, under a microsecond
+	// sound, not part of the saved state
+	enum { CodecEnable = 3, CodecRxEmpty = 1, CodecTxFull = 2, BuzzerOn = 1, BuzzerFromTimer = 2 };
+	uint8_t codecConfig = 0, codecSample = 0x55;
+	uint32_t codecPlayed = 0, codecStarved = 0;
+	std::deque<uint8_t> codecTx, codecRx;
+	int64_t nextCodecSampleAt = 0, nextAudioSampleAt = 0;
+	uint8_t buzzerControl = 0;
+	bool buzzerLevel = false;
+	double buzzerLast = -6000, buzzerFiltered = 0; // the buzzer starts off
+	std::deque<int16_t> audioBuffer;
+	void setCodecConfig(uint8_t value);
+	void writeCodec(uint8_t value);
+	uint8_t readCodec();
+	uint8_t codecFlags() const;
+	void updateSound();
+
 	// the host's power, not part of the saved state
 	uint16_t mainBatteryLevel = 2900;
 	bool externalPower = false;
@@ -99,6 +117,7 @@ public:
 	void readLCDIntoBuffer(uint8_t **lines, bool is32BitOutput) const override;
 	bool isBacklightOn() const override { return portValues & 0x1000; }
 	void setPowerSupply(int batteryPercent, bool externalPower) override;
+	size_t readAudio(int16_t *out, size_t maxSamples) override;
 	void setKeyboardKey(EpocKey key, bool value) override;
 	void updateTouchInput(int32_t x, int32_t y, bool down) override;
 

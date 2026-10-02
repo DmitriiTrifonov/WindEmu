@@ -1,4 +1,5 @@
 #include "mainwindow.h"
+#include "audiooutput.h"
 #include <QApplication>
 #include <QDir>
 #include <QFileDialog>
@@ -8,6 +9,7 @@
 #include <QTimer>
 #include <QSocketNotifier>
 #include <algorithm>
+#include <memory>
 #include <cstdio>
 #ifdef Q_OS_UNIX
 #include <fcntl.h>
@@ -151,6 +153,7 @@ int main(int argc, char *argv[])
 	auto args = a.arguments();
 	bool coldBoot = args.removeAll(QStringLiteral("--cold-boot")) > 0;
 	bool fullScreen = args.removeAll(QStringLiteral("--fullscreen")) > 0;
+	bool mute = args.removeAll(QStringLiteral("--mute")) > 0;
 	QString serialLink;
 	int serialIndex = args.indexOf(QStringLiteral("--serial"));
 	if (serialIndex > 0 && serialIndex + 1 < args.length()) {
@@ -219,6 +222,14 @@ int main(int argc, char *argv[])
 	if (!serialLink.isEmpty() && !bridgeSerialPort(emu, serialLink))
 		fprintf(stderr, "Could not set up the serial port at %s\n", qPrintable(serialLink));
 #endif
+
+	std::unique_ptr<AudioOutput> audio;
+	if (!mute) {
+		audio.reset(new AudioOutput(emu));
+		QTimer *audioTimer = new QTimer(&a);
+		QObject::connect(audioTimer, &QTimer::timeout, [&audio] { audio->update(); });
+		audioTimer->start(15);
+	}
 
 	MainWindow w(emu, fullScreen);
 	w.setCardPath(cfImage);

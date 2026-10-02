@@ -1,5 +1,6 @@
 #include "windermere.h"
 #include <math.h>
+#include <algorithm>
 #include "wind_defs.h"
 #include "hardware.h"
 #include <time.h>
@@ -97,6 +98,12 @@ uint32_t Emulator::readReg8(uint32_t reg) {
 		return (portValues >> 16) & 0xFF;
 	} else if (reg == PCDR) {
 		return (portValues >> 8) & 0xFF;
+	} else if (reg == CODR) {
+		return readCodec();
+	} else if (reg == CONFG) {
+		return codecConfig;
+	} else if (reg == COLFG) {
+		return codecFlags();
 	} else if (reg == PDDR) {
 		// bit 7 is ETNA's active-low error line; it must read high for the CF socket to power up
 		return (portValues & 0xFF) | 0x80;
@@ -170,6 +177,12 @@ uint32_t Emulator::readReg32(uint32_t reg) {
         return rtcMatch & 0xFFFF;
     } else if (reg == RTCMRU) {
         return rtcMatch >> 16;
+    } else if (reg == CODR) {
+        return readCodec();
+    } else if (reg == CONFG) {
+        return codecConfig;
+    } else if (reg == COLFG) {
+        return codecFlags();
     } else if (reg == KSCAN) {
         return kScan;
     } else {
@@ -213,6 +226,14 @@ void Emulator::writeReg8(uint32_t reg, uint8_t value) {
 		portValues &= 0xFFFFFF00;
 		portValues |= (uint32_t)value;
 		diffPorts(oldPorts, portValues);
+	} else if (reg == CODR) {
+		writeCodec(value);
+	} else if (reg == CONFG) {
+		setCodecConfig(value);
+	} else if (reg == BZCONT) {
+		buzzerControl = value;
+		if (!(value & BuzzerFromTimer))
+			buzzerLevel = value & BuzzerOn;
 	} else if (reg == PADDR) {
 		portDirections &= 0x00FFFFFF;
 		portDirections |= (uint32_t)value << 24;
@@ -260,6 +281,12 @@ void Emulator::writeReg32(uint32_t reg, uint32_t value) {
 		pendingInterrupts &= ~(1 << MCINT);
 	} else if (reg == TEOI) {
 		pendingInterrupts &= ~(1 << TINT);
+	} else if (reg == COEOI) {
+		pendingInterrupts &= ~(1 << CSINT);
+	} else if (reg == CODR) {
+		writeCodec(value);
+	} else if (reg == CONFG) {
+		setCodecConfig(value);
 	// TEOI = 0x418,
 	// STFCLR = 0x41C,
 	// E2EOI = 0x420,
@@ -619,42 +646,52 @@ void Emulator::executeUntil(int64_t cycles) {
 	}
 
 	while (!asleep && passedCycles < cycles) {
-		if (passedCycles >= nextTickAt) {
-			// increment RTCDIV
-			if ((pwrsr & 0x3F) == 0x3F) {
-				pwrsr &= ~0x3F;
-			} else {
-				pwrsr++;
+		// the devices only need looking at every so often, which saves a lot of time
+		if (passedCycles >= nextDeviceCheck || halted) {
+			nextDeviceCheck = passedCycles + DeviceCheckInterval;
+			if (passedCycles >= nextTickAt) {
+				// increment RTCDIV
+				if ((pwrsr & 0x3F) == 0x3F) {
+					pwrsr &= ~0x3F;
+				} else {
+					pwrsr++;
+				}
+
+				nextTickAt += TICK_INTERVAL;
+				pendingInterrupts |= (1<<TINT);
+				checkRtcAlarm();
+			}
+			if (tc1.tick(passedCycles)) {
+				pendingInterrupts |= (1<<TC1OI);
+				// the buzzer can be driven by timer 1 to make a tone
+				if (buzzerControl & BuzzerFromTimer)
+					buzzerLevel = !buzzerLevel;
+			}
+			updateSound();
+			if (tc2.tick(passedCycles))
+				pendingInterrupts |= (1<<TC2OI);
+
+			if (mediaChangesDue && !asleep && passedCycles >= mediaChangeAt) {
+				mediaChangesDue--;
+				mediaChangeAt = passedCycles + CLOCK_SPEED;
+				pendingInterrupts |= (1 << MCINT);
 			}
 
-			nextTickAt += TICK_INTERVAL;
-			pendingInterrupts |= (1<<TINT);
-			checkRtcAlarm();
+			// so are the UARTs'
+			uart1.poll();
+			uart2.poll();
+			pendingInterrupts &= ~((1 << UART1) | (1 << UART2));
+			if (uart1.interruptPending())
+				pendingInterrupts |= (1 << UART1);
+			if (uart2.interruptPending())
+				pendingInterrupts |= (1 << UART2);
+
+			// ETNA's interrupt line is level-triggered
+			pendingInterrupts &= ~(1 << EINT1);
+			if (etna.irqActive())
+				pendingInterrupts |= (1 << EINT1);
+
 		}
-		if (tc1.tick(passedCycles))
-			pendingInterrupts |= (1<<TC1OI);
-		if (tc2.tick(passedCycles))
-			pendingInterrupts |= (1<<TC2OI);
-
-		if (mediaChangesDue && !asleep && passedCycles >= mediaChangeAt) {
-			mediaChangesDue--;
-			mediaChangeAt = passedCycles + CLOCK_SPEED;
-			pendingInterrupts |= (1 << MCINT);
-		}
-
-		// so are the UARTs'
-		uart1.poll();
-		uart2.poll();
-		pendingInterrupts &= ~((1 << UART1) | (1 << UART2));
-		if (uart1.interruptPending())
-			pendingInterrupts |= (1 << UART1);
-		if (uart2.interruptPending())
-			pendingInterrupts |= (1 << UART2);
-
-		// ETNA's interrupt line is level-triggered
-		pendingInterrupts &= ~(1 << EINT1);
-		if (etna.irqActive())
-			pendingInterrupts |= (1 << EINT1);
 
 		if ((pendingInterrupts & interruptMask & FIQ_INTERRUPTS) != 0 && canAcceptFIQ()) {
 			requestFIQ();
@@ -673,6 +710,7 @@ void Emulator::executeUntil(int64_t cycles) {
 			int64_t nextEvent = nextTickAt;
 			if (tc1.nextTickAt < nextEvent) nextEvent = tc1.nextTickAt;
 			if (tc2.nextTickAt < nextEvent) nextEvent = tc2.nextTickAt;
+			if ((codecConfig & CodecEnable) && nextCodecSampleAt < nextEvent) nextEvent = nextCodecSampleAt;
 			if (cycles < nextEvent) nextEvent = cycles;
 			passedCycles = nextEvent;
 		} else {
@@ -684,7 +722,7 @@ void Emulator::executeUntil(int64_t cycles) {
 
 #ifndef __EMSCRIPTEN__
 			uint32_t new_pc = getGPR(15) - 0xC;
-			if (_breakpoints.find(new_pc) != _breakpoints.end()) {
+			if (!_breakpoints.empty() && _breakpoints.find(new_pc) != _breakpoints.end()) {
 				log("⚠️ Breakpoint triggered at %08x!", new_pc);
 				return;
 			}
@@ -831,6 +869,104 @@ void Emulator::serialReceive(int port, const uint8_t *data, size_t length) {
 		u->rxQueue.insert(u->rxQueue.end(), data, data + length);
 		u->poll();
 	}
+}
+
+// The codec plays and records 8-bit A-law samples at 8kHz through 16-byte
+// FIFOs, interrupting while it wants more to play or has a recording to
+// take. Nothing is ever recorded, as there's no microphone.
+static const int CodecRate = 8000;
+static const size_t CodecFifoSize = 16;
+static const uint8_t ALawSilence = 0x55;
+
+static int16_t decodeALaw(uint8_t a) {
+	a ^= 0x55;
+	int exponent = (a >> 4) & 7;
+	int mantissa = a & 0x0F;
+	int magnitude = (exponent == 0) ? (mantissa << 4) + 8 : ((mantissa << 4) + 0x108) << (exponent - 1);
+	return (a & 0x80) ? magnitude : -magnitude;
+}
+
+void Emulator::setCodecConfig(uint8_t value) {
+	// say how well a sound kept up once it ends
+	if ((codecConfig & CodecEnable) && !(value & CodecEnable)) {
+		log("Sound ended: %u samples played, %u missing (the emulation fell behind)", codecPlayed, codecStarved);
+		codecPlayed = codecStarved = 0;
+	}
+	if ((value & CodecEnable) && !(codecConfig & CodecEnable))
+		nextCodecSampleAt = passedCycles + CLOCK_SPEED / CodecRate;
+	if (!(value & CodecEnable)) {
+		codecTx.clear();
+		codecRx.clear();
+		codecSample = ALawSilence;
+	}
+	codecConfig = value;
+}
+
+void Emulator::writeCodec(uint8_t value) {
+	if (codecTx.size() < CodecFifoSize)
+		codecTx.push_back(value);
+}
+
+uint8_t Emulator::readCodec() {
+	if (codecRx.empty())
+		return ALawSilence;
+	uint8_t value = codecRx.front();
+	codecRx.pop_front();
+	return value;
+}
+
+uint8_t Emulator::codecFlags() const {
+	uint8_t flags = 0;
+	if (codecRx.empty())
+		flags |= CodecRxEmpty;
+	if (codecTx.size() >= CodecFifoSize)
+		flags |= CodecTxFull;
+	return flags;
+}
+
+// Moves the codec on by a sample at a time, and makes the host's samples
+void Emulator::updateSound() {
+	while ((codecConfig & CodecEnable) && passedCycles >= nextCodecSampleAt) {
+		nextCodecSampleAt += CLOCK_SPEED / CodecRate;
+		if (codecTx.empty()) {
+			codecSample = ALawSilence;
+			codecStarved++;
+		} else {
+			codecSample = codecTx.front();
+			codecTx.pop_front();
+			codecPlayed++;
+		}
+		if (codecRx.size() < CodecFifoSize)
+			codecRx.push_back(ALawSilence);
+		if (codecTx.size() <= CodecFifoSize / 2 || codecRx.size() >= CodecFifoSize / 2)
+			pendingInterrupts |= (1 << CSINT);
+	}
+
+	while (passedCycles >= nextAudioSampleAt) {
+		nextAudioSampleAt += CLOCK_SPEED / AudioSampleRate;
+		// the speaker needs the amplifier (port D bit 1); the buzzer doesn't
+		int sample = (portValues & 2) ? decodeALaw(codecSample) : 0;
+		// keep only the buzzer's changes, so it rests at silence
+		double buzzer = buzzerLevel ? 6000.0 : -6000.0;
+		buzzerFiltered = buzzer - buzzerLast + 0.995 * buzzerFiltered;
+		buzzerLast = buzzer;
+		sample += (int)buzzerFiltered;
+		if (sample > 32767) sample = 32767;
+		if (sample < -32768) sample = -32768;
+		audioBuffer.push_back((int16_t)sample);
+		// whatever isn't collected within a second is dropped
+		if (audioBuffer.size() > (size_t)AudioSampleRate)
+			audioBuffer.pop_front();
+	}
+}
+
+size_t Emulator::readAudio(int16_t *out, size_t maxSamples) {
+	size_t count = std::min(maxSamples, audioBuffer.size());
+	for (size_t i = 0; i < count; i++) {
+		out[i] = audioBuffer.front();
+		audioBuffer.pop_front();
+	}
+	return count;
 }
 
 // A card going in or out while EPOC runs comes with the door being opened and closed

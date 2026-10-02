@@ -10,7 +10,7 @@ Psion 5mx (EPOC R5) features:
 - ✅ LCD: implemented, with its contrast setting and backlight (Fn+Space)
 - ✅ Keyboard: implemented
 - ✅ Touch panel: implemented
-- ❌ Audio: not implemented
+- ✅ Audio: the speaker (alarms, Record's playback) and the buzzer (key clicks) play through ALSA; recording hears silence. `--mute` turns it off
 - ✅ Serial port: the RS-232 port can be connected to a pseudo-terminal on the host (see below); infrared is not emulated
 - ✅ ETNA (PCMCIA/CompactFlash): CF card backed by a disk image (see below); ETNA's UART is not emulated
 - ✅ Batteries: the main batteries follow the host's battery charge, and a charger shows as external power
