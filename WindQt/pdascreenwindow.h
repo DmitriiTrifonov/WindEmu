@@ -84,7 +84,8 @@ class ScaledScreenView : public QGraphicsView
 	QGraphicsProxyWidget *proxy;
 
 public:
-	explicit ScaledScreenView(QWidget *screen);
+	// useGpu scales with OpenGL, if the host has it
+	explicit ScaledScreenView(QWidget *screen, bool useGpu = true);
 	~ScaledScreenView() override;
 
 protected:

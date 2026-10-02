@@ -154,6 +154,7 @@ int main(int argc, char *argv[])
 	bool coldBoot = args.removeAll(QStringLiteral("--cold-boot")) > 0;
 	bool fullScreen = args.removeAll(QStringLiteral("--fullscreen")) > 0;
 	bool mute = args.removeAll(QStringLiteral("--mute")) > 0;
+	bool useGpu = args.removeAll(QStringLiteral("--no-gpu")) == 0;
 	QString serialLink;
 	int serialIndex = args.indexOf(QStringLiteral("--serial"));
 	if (serialIndex > 0 && serialIndex + 1 < args.length()) {
@@ -231,7 +232,7 @@ int main(int argc, char *argv[])
 		audioTimer->start(15);
 	}
 
-	MainWindow w(emu, fullScreen);
+	MainWindow w(emu, fullScreen, useGpu);
 	w.setCardPath(cfImage);
 	int result = a.exec();
 

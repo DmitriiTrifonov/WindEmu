@@ -6,6 +6,8 @@
 #include <QFileDialog>
 #include <QMenu>
 #include <QMessageBox>
+#include <QOpenGLContext>
+#include <QOpenGLWidget>
 #ifdef Q_OS_LINUX
 #include <linux/input-event-codes.h>
 #endif
@@ -145,7 +147,7 @@ void PDAScreenWindow::updateScreen() {
 	lcd->setPixmap(QPixmap::fromImage(std::move(img)));
 }
 
-ScaledScreenView::ScaledScreenView(QWidget *screen)
+ScaledScreenView::ScaledScreenView(QWidget *screen, bool useGpu)
 {
 	setWindowTitle(screen->windowTitle());
 	setScene(&scene);
@@ -157,6 +159,14 @@ ScaledScreenView::ScaledScreenView(QWidget *screen)
 	setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	setRenderHint(QPainter::SmoothPixmapTransform);
+
+	// scaling the whole screen up in software takes much of a phone's CPU from
+	// the emulation, so let the GPU do it where there's OpenGL
+	if (useGpu && QOpenGLContext().create()) {
+		setViewport(new QOpenGLWidget);
+		// a GL viewport redraws in full anyway
+		setViewportUpdateMode(QGraphicsView::FullViewportUpdate);
+	}
 }
 
 ScaledScreenView::~ScaledScreenView()

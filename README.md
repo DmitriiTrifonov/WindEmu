@@ -47,7 +47,7 @@ EPOC's remote link (System > Tools > Remote link, on Cable by default) then talk
 Full screen
 -----------
 
-`--fullscreen` scales the Psion to fill the screen, keeping its shape; `run-sway.sh` uses it. For a Series 5mx the silkscreen buttons then move above and below the LCD (shown as symbols), which suits wide screens such as a phone held sideways.
+`--fullscreen` scales the Psion to fill the screen, keeping its shape; `run-sway.sh` uses it. For a Series 5mx the silkscreen buttons then move above and below the LCD (shown as symbols), which suits wide screens such as a phone held sideways. The scaling is done on the GPU through OpenGL where the host has it; `--no-gpu` does it in software instead.
 
 CompactFlash card (Series 5mx)
 ------------------------------

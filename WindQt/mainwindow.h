@@ -17,7 +17,7 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-	explicit MainWindow(EmuBase *emu, bool fullScreen = false, QWidget *parent = nullptr);
+	explicit MainWindow(EmuBase *emu, bool fullScreen = false, bool useGpu = true, QWidget *parent = nullptr);
 	void setCardPath(const QString &path) { pdaScreen.setCardPath(path); }
     ~MainWindow() override;
 

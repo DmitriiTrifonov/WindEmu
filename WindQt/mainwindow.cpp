@@ -45,7 +45,7 @@ static void updatePowerSupply(EmuBase *emu) {
 	emu->setPowerSupply(percent, external);
 }
 
-MainWindow::MainWindow(EmuBase *emu, bool fullScreen, QWidget *parent) :
+MainWindow::MainWindow(EmuBase *emu, bool fullScreen, bool useGpu, QWidget *parent) :
     QMainWindow(parent),
 	ui(new Ui::MainWindow),
 	pdaScreen(emu, fullScreen),
@@ -72,7 +72,7 @@ MainWindow::MainWindow(EmuBase *emu, bool fullScreen, QWidget *parent) :
 	powerTimer->start(30 * 1000);
 
 	if (fullScreen) {
-		fullScreenView.reset(new ScaledScreenView(&pdaScreen));
+		fullScreenView.reset(new ScaledScreenView(&pdaScreen, useGpu));
 		fullScreenView->showFullScreen();
 		pdaScreen.setFocus();
 	} else {
